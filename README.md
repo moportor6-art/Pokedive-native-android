@@ -11,13 +11,17 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.4)
+## Qué funciona (0.5)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
 - Expediciones en las 9 rutas: movimiento y esquiva con la física del juego, ataque básico automático,
   dos especiales y definitiva, enemigos del bioma con IA sencilla, daño por tipos, experiencia y niveles,
   un alfa cada 5 pisos, rescate del Pokémon del piso y escaleras.
+- Objetos de mejora en la mazmorra (los 22 del juego: Proteína, Garra Rápida, Restos, Casco Dentado…) con sus efectos;
+  los de la Biblioteca de Unown se desbloquean comprándolos allí.
+- Enemigos a distancia que disparan su movimiento, y estados alterados (quemado, envenenado, paralizado, congelado, mojado).
+- Escamas Corazón y boletos como botín; logros (los 76 del juego) con sus recompensas.
 - Evoluciones al nivel que marca el juego (y "despertar" para los que no evolucionan), y se guardan en tu refugio.
 - Botín: monedas, bayas, materiales, cristales y caramelos raros que sueltan los enemigos; cofres en el mapa.
 - Jefe cada 5 pisos (legendario guardián de la ruta cada 10) que bloquea las escaleras y golpea en área.
@@ -33,7 +37,7 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 
 ## Pendiente
 
-Taller, Biblioteca y Herbolario (se construyen pero aún no hacen su función), Poké Balls, adornos, ampliar terreno, enemigos a distancia, estados alterados, campamentos, logros,
+Taller y Herbolario (se construyen pero aún no hacen su función), Poké Balls, adornos, ampliar terreno, enemigos a distancia, estados alterados, campamentos, logros,
 diarias y el tutorial guiado completo. Los amigos, clanes y clasificaciones en línea no existen sin internet.
 
 ## Estructura

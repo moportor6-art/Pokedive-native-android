@@ -2,6 +2,10 @@
 import { load, save, rid } from "./store.js";
 import { listLanRooms } from "./lan.js";
 import { registerGuildRoutes } from "./guild.js";
+import { loadShared } from "./shared.js";
+
+let SH = null;
+loadShared().then((m) => (SH = m));
 
 const ok = (body) => ({ status: 200, body });
 const noContent = () => ({ status: 204 });
@@ -58,6 +62,7 @@ export function newGuild() {
     raidCosm: null,
     flute: null,
     catch: null,
+    unlocked: [],
   };
   for (const k of RES) g[k] = 0;
   g.poke = 50;
@@ -133,10 +138,20 @@ export function grantRun(u, r) {
     rt.deepest = Math.max(rt.deepest, r.floor || 0);
   }
   const meta = metaOf(u);
-  meta.stats.runs = (meta.stats.runs || 0) + 1;
-  meta.stats.deepest = Math.max(meta.stats.deepest || 0, r.floor || 0);
-  meta.stats.rescued = (meta.stats.rescued || 0) + (r.rescued || []).length;
-  meta.stats.coins = (meta.stats.coins || 0) + (r.coins || 0);
+  const st = meta.stats;
+  st.runs = (st.runs || 0) + 1;
+  if (r.extracted) st.extractions = (st.extractions || 0) + 1;
+  if (r.extracted && r.coop) st.coopExtractions = (st.coopExtractions || 0) + 1;
+  if (r.solo) st.soloDeepest = Math.max(st.soloDeepest || 0, r.floor || 0);
+  st.alphas = (st.alphas || 0) + (r.alphas || 0);
+  st.bosses = (st.bosses || 0) + (r.bosses || 0);
+  st.legends = (st.legends || 0) + (r.legends || 0);
+  st.guardians = (st.guardians || 0) + (r.legends || 0);
+  st.bestRescue = Math.max(st.bestRescue || 0, (r.rescued || []).length);
+  if (r.route) st.routeSet = [...new Set([...(st.routeSet || []), r.route])];
+  st.deepest = Math.max(st.deepest || 0, r.floor || 0);
+  st.rescued = (st.rescued || 0) + (r.rescued || []).length;
+  st.coins = (st.coins || 0) + (r.coins || 0);
   for (const dex of r.rescued || []) if (!meta.dex.owned.includes(dex)) meta.dex.owned.push(dex);
   save();
 }
@@ -252,7 +267,45 @@ route("GET", "/auth/playable", (c) => ok(guildOf(c.user).residents.filter((r) =>
 route("GET", "/guild", (c) => ok(guildOf(c.user)));
 
 // ---- Logros y diarias ----
-route("GET", "/meta", (c) => ok(metaOf(c.user)));
+// Logros: misma lista, metas y recompensas que el juego (tabla N del módulo compartido)
+function statValue(u, stat) {
+  const g = guildOf(u);
+  const m = metaOf(u);
+  const st = m.stats;
+  switch (stat) {
+    case "owned": return m.dex.owned.length;
+    case "seen": return new Set([...m.dex.seen, ...m.dex.owned]).size;
+    case "buildings": return g.buildings.length;
+    case "residents": return g.residents.length;
+    case "species": return new Set(g.residents.map((r) => r.dex)).size;
+    case "shinies": return g.residents.filter((r) => r.shiny).length;
+    case "decor": return g.decor.length;
+    case "routes": return (st.routeSet || []).length;
+    default: return st[stat] || 0;
+  }
+}
+function metaView(u) {
+  const m = metaOf(u);
+  const N = SH?.N || {};
+  m.claimed ||= [];
+  m.achievements = Object.entries(N).map(([id, a]) => {
+    const progress = Math.min(a.goal, statValue(u, a.stat));
+    return { id, progress, unlocked: progress >= a.goal, claimed: m.claimed.includes(id) };
+  });
+  return m;
+}
+route("GET", "/meta", (c) => ok(metaView(c.user)));
+route("POST", "/meta/achievements/:id/claim", (c) => {
+  const a = SH?.N?.[c.params.id];
+  const m = metaView(c.user);
+  const row = m.achievements.find((x) => x.id === c.params.id);
+  if (!a || !row?.unlocked || row.claimed) return fail(400, "Aún no puedes reclamarlo");
+  m.claimed.push(c.params.id);
+  const g = guildOf(c.user);
+  for (const [k, v] of Object.entries(a.reward || {})) g[k] = (g[k] || 0) + v;
+  save();
+  return ok(metaView(c.user));
+});
 route("GET", "/mail", () => ok([]));
 
 // ---- Social: sin internet no hay amigos, clanes ni clasificaciones ----

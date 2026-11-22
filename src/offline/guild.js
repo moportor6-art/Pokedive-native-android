@@ -294,6 +294,8 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
     const cost = Object.fromEntries(Object.entries(it.cost).map(([k, v]) => [k, Math.round(v * cheap)]));
     pay(g, cost);
     g.bag[id] = (g.bag[id] || 0) + 1;
+    (c.user.meta ||= { stats: {} }).stats ||= {};
+    c.user.meta.stats.purchases = (c.user.meta.stats.purchases || 0) + 1;
   }));
 
   // ---- Café de Spinda: platos para la próxima expedición ----
@@ -376,6 +378,9 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
         const kid = newResident(baby(mom.dex), { bred: true, ivs, ...(nature ? { nature } : {}), shiny: Math.random() < 1 / 512 });
         g.arrivals.push(kid);
         hatched.push(kid);
+        const st = ((c.user.meta ||= {}).stats ||= {});
+        st.hatched = (st.hatched || 0) + 1;
+        st.bred = (st.bred || 0) + 1;
       }
       save();
       return ok({ guild: g, hatched });
@@ -406,6 +411,20 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
     pay(g, cost);
     settleNests(g, b);
     b.baskets = (b.baskets || 0) + 1;
+  }));
+
+  // ---- Biblioteca de Unown: objetos nuevos para las mazmorras ----
+  route("POST", "/guild/unlock", G((g, c) => {
+    const id = c.body?.upgrade;
+    const shelf = M.En.find((sh) => sh.ups.includes(id));
+    if (!shelf) throw err("Ese libro no existe");
+    const lib = best(g, "biblioteca");
+    if (!lib) throw err("Primero construye la Biblioteca de Unown");
+    if ((lib.level || 1) < shelf.level) throw err("Mejora la Biblioteca para leerlo");
+    g.unlocked ||= [];
+    if (g.unlocked.includes(id)) throw err("Ya lo tienes");
+    pay(g, shelf.cost);
+    g.unlocked.push(id);
   }));
 
   // ---- Varios que solo guardan una elección ----
