@@ -7,6 +7,18 @@ import { save, rid } from "./store.js";
 let M;
 loadShared().then((m) => (M = m));
 
+// Ampliaciones de la caseta (tabla del juego; el cliente la enseña igual)
+const BOX_COSTS = [
+  { materials: 30, poke: 40 }, { materials: 60, poke: 80 }, { materials: 100, poke: 140 },
+  { materials: 150, poke: 220, crystals: 20 }, { materials: 250, poke: 400, crystals: 40 },
+  { materials: 400, poke: 700, crystals: 70 }, { materials: 650, poke: 1200, crystals: 120 },
+  { materials: 1000, poke: 2000, crystals: 200 }, { materials: 1600, poke: 3200, crystals: 320 },
+];
+// Platos por expedición según el nivel del Café (descripción de sus niveles)
+const MEAL_SEATS = [1, 1, 2, 3];
+// Minutos de cansancio de un Pokémon que cae en una expedición (reconstruido; el Centro Nv 2+ lo deja en la mitad)
+const TIRED_MIN = 30;
+
 const RES = ["berries", "materials", "crystals", "poke", "heartScales", "starPieces", "tickets", "candies", "raidCoins"];
 const iso = (t = Date.now()) => new Date(t).toISOString();
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -52,6 +64,18 @@ function collectOne(g, b, now = Date.now()) {
   b.updatedAt = iso(now);
   g[kind] = (g[kind] || 0) + n;
   return n;
+}
+
+const best = (g, kind) => g.buildings.filter((b) => b.kind === kind).sort((a, b) => (b.level || 1) - (a.level || 1))[0];
+
+/** Un Pokémon de este teléfono cayó en una expedición: queda cansado un rato (el Centro lo cura). */
+export function tire(g, residentId, floor) {
+  const r = g.residents.find((x) => x.id === residentId);
+  if (!r) return;
+  const centro = best(g, "centro");
+  const mins = TIRED_MIN * ((centro?.level || 0) >= 2 ? 0.5 : 1);
+  r.tiredUntil = iso(Date.now() + mins * 60e3);
+  r.tiredFloor = floor;
 }
 
 const findB = (g, id) => {
@@ -142,12 +166,24 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
     }
     if (buildingId) {
       const b = findB(g, buildingId);
+      if (b.kind === "guarderia") {
+        settleNests(g, b);
+        r.job = b.id;
+        r.nestSlot = Number.isInteger(c.body?.slot) ? c.body.slot : null;
+        r.stored = false;
+        return;
+      }
       const cap = M.Js(b.kind, b.level || 1);
       const now = g.residents.filter((x) => x.job === b.id && x.id !== r.id).length;
       if (now >= cap) throw err("No quedan puestos libres");
       r.job = b.id;
       r.stored = false;
-    } else r.job = null;
+    } else {
+      const old = g.buildings.find((x) => x.id === r.job);
+      if (old?.kind === "guarderia") settleNests(g, old);
+      r.job = null;
+      r.nestSlot = null;
+    }
   }));
   route("POST", "/guild/residents/fill", G((g, c) => {
     const exclude = c.body?.exclude;
@@ -238,7 +274,7 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
 
   // ---- Caseta (almacén de Pokémon) ----
   route("POST", "/guild/caseta/expand", G((g) => {
-    const cost = M.li.costs[g.boxes || 0];
+    const cost = BOX_COSTS[g.boxes || 0];
     if (!cost) throw err("La caseta ya está al máximo");
     pay(g, cost);
     g.boxes = (g.boxes || 0) + 1;
@@ -258,6 +294,118 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
     const cost = Object.fromEntries(Object.entries(it.cost).map(([k, v]) => [k, Math.round(v * cheap)]));
     pay(g, cost);
     g.bag[id] = (g.bag[id] || 0) + 1;
+  }));
+
+  // ---- Café de Spinda: platos para la próxima expedición ----
+  route("POST", "/guild/meal", G((g, c) => {
+    const id = c.body?.dish;
+    const dish = M.Ut[id];
+    if (!dish) throw err("Spinda no sirve eso");
+    const cafe = best(g, "cafe");
+    if (!cafe) throw err("Primero construye el Café de Spinda");
+    if ((cafe.level || 1) < dish.level) throw err("Mejora el Café para pedirlo");
+    g.meal ||= [];
+    if (g.meal.includes(id)) throw err("Ya lo has pedido");
+    if (g.meal.length >= MEAL_SEATS[(cafe.level || 1) - 1]) throw err("La mesa está llena");
+    pay(g, dish.cost);
+    g.meal.push(id);
+  }));
+
+  // ---- Dojo de Makuhita: entrenamiento permanente con Escamas Corazón ----
+  route("POST", "/guild/residents/:id/train", G((g, c) => {
+    const r = findR(g, c.params.id);
+    const dojo = best(g, "dojo");
+    if (!dojo) throw err("Primero construye el Dojo de Makuhita");
+    const cap = M.li.caps[Math.min(M.li.caps.length, dojo.level || 1) - 1];
+    const times = Math.max(1, Math.min(Number(c.body?.times) || 1, cap - (r.training || 0)));
+    if ((r.training || 0) >= cap) throw err("Ya no puede entrenar más aquí");
+    pay(g, { heartScales: M.gc(r.training || 0, times) });
+    r.training = (r.training || 0) + times;
+  }));
+
+  // ---- Centro Pokémon de Audino: curar el cansancio ----
+  route("POST", "/guild/residents/:id/heal", G((g, c) => {
+    const r = findR(g, c.params.id);
+    const centro = best(g, "centro");
+    if (!centro) throw err("Primero construye el Centro Pokémon");
+    pay(g, M.ao(centro.level || 1, r.tiredFloor || 0));
+    r.tiredUntil = null;
+    r.tiredFloor = null;
+  }));
+
+  // ---- Guardería de Chansey: huevos ----
+  const nestsOf = (g, b) => M.Sa(g.residents.filter((r) => r.job === b.id), b.level || 1, (a, d) => M.Ji(a, d, 132));
+  function settleNests(g, b, now = Date.now()) {
+    const nests = nestsOf(g, b);
+    b.nests ||= [];
+    for (const n of nests) b.nests[n.index] = M.rs(b, n.index, n.breeding, now);
+    b.updatedAt = iso(now);
+  }
+  const baby = (dex) => {
+    let d = Number(dex);
+    for (let i = 0; i < 4 && M.Jt[d]; i++) d = Number(M.Jt[d]);
+    return String(d).padStart(4, "0");
+  };
+  route("POST", "/guild/buildings/:id/egg", async (c) => {
+    if (!M) M = await loadShared();
+    const g = guildOf(c.user);
+    try {
+      const b = findB(g, c.params.id);
+      const nests = nestsOf(g, b);
+      const nest = nests[Number.isInteger(c.body?.nest) ? c.body.nest : nests.findIndex((n) => n.breeding)] || nests[0];
+      if (!nest?.breeding) throw err("Esa pareja no es compatible");
+      settleNests(g, b);
+      const have = Math.floor(b.nests[nest.index] + 1e-9);
+      const per = M.Lt.cost.berries || 0;
+      const n = Math.min(have, c.body?.all ? Math.floor((g.berries || 0) / Math.max(1, per)) : 1);
+      if (n < 1) throw err(have ? "Faltan bayas" : "Aún no hay huevos");
+      pay(g, { berries: per * n });
+      b.nests[nest.index] -= n;
+      const lvl = b.level || 1;
+      const inherit = M.Lt.inherit[Math.min(M.Lt.inherit.length, lvl) - 1];
+      const hatched = [];
+      for (let k = 0; k < n; k++) {
+        const mom = nest.a.dex === 132 || String(nest.a.dex) === "0132" ? nest.b : nest.a;
+        const ivs = {};
+        const keys = ["hp", "atk", "def", "spa", "spd", "spe"].sort(() => Math.random() - 0.5);
+        keys.forEach((key, i) => {
+          const from = Math.random() < 0.5 ? nest.a : nest.b;
+          ivs[key] = i < inherit ? from.ivs?.[key] ?? 15 : Math.floor(Math.random() * 32);
+        });
+        const nature = lvl >= 2 ? (Math.random() < 0.5 ? nest.a : nest.b).nature : undefined;
+        const kid = newResident(baby(mom.dex), { bred: true, ivs, ...(nature ? { nature } : {}), shiny: Math.random() < 1 / 512 });
+        g.arrivals.push(kid);
+        hatched.push(kid);
+      }
+      save();
+      return ok({ guild: g, hatched });
+    } catch (e) {
+      if (e.status) return { status: e.status, body: { message: e.message } };
+      throw e;
+    }
+  });
+  route("POST", "/guild/buildings/:id/egg/rush", G((g, c) => {
+    const b = findB(g, c.params.id);
+    const today = new Date().toDateString();
+    if (b.rushDay !== today) {
+      b.rushDay = today;
+      b.rushes = 0;
+    }
+    const cost = M.Lt.rush[b.rushes || 0];
+    if (!cost) throw err("Hoy ya no se puede adelantar más");
+    pay(g, cost);
+    settleNests(g, b);
+    const i = Number(c.body?.nest) || 0;
+    b.nests[i] = Math.floor((b.nests[i] || 0) + 1 + 1e-9);
+    b.rushes = (b.rushes || 0) + 1;
+  }));
+  route("POST", "/guild/buildings/:id/basket", G((g, c) => {
+    const b = findB(g, c.params.id);
+    const cost = M.Lt.baskets[b.baskets || 0];
+    if (!cost) throw err("Ya tiene todas las cestas");
+    pay(g, cost);
+    settleNests(g, b);
+    b.baskets = (b.baskets || 0) + 1;
   }));
 
   // ---- Varios que solo guardan una elección ----

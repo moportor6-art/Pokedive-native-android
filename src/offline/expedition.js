@@ -7,6 +7,7 @@ import { Room } from "@colyseus/core/Room";
 import { ExpeditionState, Player, Enemy, Pickup } from "./schema.js";
 import { guildOf, grantRun, userByToken } from "./api.js";
 import { save } from "./store.js";
+import { tire } from "./guild.js";
 import { announce } from "./lan.js";
 
 const TICK = 33 / 1000; // paso fijo de la simulación del juego
@@ -187,6 +188,7 @@ export class ExpeditionRoom extends Room {
     p.specialLv = moves.map(() => "0").join(",");
     pm.resident = res?.id;
     pm.level = Math.max(1, Number(res?.level) || 1);
+    pm.training = Number(res?.training) || 0;
     p.evolved = Math.min(2, Number(res?.evolved) || 0);
     pm.awaken = Math.min(2, Number(res?.awaken) || 0);
     this.applyStats(p, pm);
@@ -200,7 +202,9 @@ export class ExpeditionRoom extends Room {
     pm.atk = Math.max(st.atk, st.spa);
     pm.def = (st.def + st.spd) / 2;
     p.level = pm.level;
-    const maxHp = Math.round((60 + st.hp * 0.6 + p.level * 9) * (1 + 0.12 * (pm.awaken || 0)));
+    // Dojo: +4 % por sesión (tabla del juego). Leche Mu-mu: +25 PS.
+    const train = 1 + (this.M.li?.per ?? 0.04) * (pm.training || 0);
+    const maxHp = Math.round((60 + st.hp * 0.6 + p.level * 9) * (1 + 0.12 * (pm.awaken || 0)) * train + (pm.meal?.includes("moomoo-milk") ? 25 : 0));
     const ratio = p.maxHp ? p.hp / p.maxHp : 1;
     p.maxHp = maxHp;
     p.hp = Math.max(1, Math.round(maxHp * ratio));
@@ -294,6 +298,11 @@ export class ExpeditionRoom extends Room {
       const g = pm?.user ? guildOf(pm.user) : null;
       const bag = g?.bag || {};
       pm.bag = { ...bag };
+      // Platos del Café: se comen al salir
+      pm.meal = [...(g?.meal || [])];
+      if (g) g.meal = [];
+      this.applyStats(p, pm);
+      p.hp = p.maxHp;
       p.bag = Object.entries(bag).filter(([, n]) => n > 0).map(([k, n]) => `${k}:${n}`).join(",");
       if (g) {
         g.bag = {};
@@ -617,7 +626,7 @@ export class ExpeditionRoom extends Room {
     const eff = effectiveness(mv.type, ai.types);
     const stab = pm.types.includes(mv.type) ? 1.2 : 1;
     const crit = Math.random() < 0.06;
-    let dmg = (mv.power || 6) * (1 + p.level * 0.12) * (1 + 0.14 * (pm.awaken || 0)) * Math.sqrt(pm.atk / ai.def) * eff * stab * mult * rnd(0.9, 1.1) * (crit ? 1.6 : 1);
+    let dmg = (mv.power || 6) * (1 + p.level * 0.12) * (1 + 0.14 * (pm.awaken || 0)) * (1 + (this.M.li?.per ?? 0.04) * (pm.training || 0)) * (pm.meal?.includes("curry") ? 1.12 : 1) * Math.sqrt(pm.atk / ai.def) * eff * stab * mult * rnd(0.9, 1.1) * (crit ? 1.6 : 1);
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
     ai.aggro = Math.max(ai.aggro || 0, 6);
@@ -661,7 +670,7 @@ export class ExpeditionRoom extends Room {
   giveXp(id, p, xp) {
     const pm = this.meta.get(id);
     if (!pm) return;
-    let total = p.xp + xp;
+    let total = p.xp + Math.round(xp * (pm.meal?.includes("sitrus-pie") ? 1.2 : 1));
     while (total >= p.xpNext && p.level < 100) {
       total -= p.xpNext;
       pm.level = p.level + 1;
@@ -797,6 +806,10 @@ export class ExpeditionRoom extends Room {
     }
     if (p.hp <= 0) {
       p.downed = true;
+      if (pm.user && pm.resident) {
+        tire(guildOf(pm.user), pm.resident, s.floor);
+        save();
+      }
       p.hp = 0;
       p.anim = "Hurt";
       p.animSeq = (p.animSeq + 1) & 0xffff;
