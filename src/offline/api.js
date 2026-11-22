@@ -152,6 +152,7 @@ export function grantRun(u, r) {
   if (r.legendCaught) g.legendPity = 0;
   else if (r.legendEscaped) g.legendPity = (g.legendPity || 0) + r.legendEscaped;
   if (r.guardianRoute) (g.guardians ||= {})[r.guardianRoute] = true;
+  dailyProgress(u, r);
   const meta = metaOf(u);
   const st = meta.stats;
   st.runs = (st.runs || 0) + 1;
@@ -301,6 +302,7 @@ function statValue(u, stat) {
 }
 function metaView(u) {
   const m = metaOf(u);
+  dailyOf(u);
   const N = SH?.N || {};
   m.claimed ||= [];
   m.achievements = Object.entries(N).map(([id, a]) => {
@@ -309,6 +311,104 @@ function metaView(u) {
   });
   return m;
 }
+// Encargos del día: tabla del juego (Pt), racha de 7 días (ti) y premio por los tres (Ft). Se renuevan a medianoche local.
+const dayKey = (t = new Date()) => `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
+function nextMidnight() {
+  const t = new Date();
+  t.setHours(24, 0, 0, 0);
+  return t.toISOString();
+}
+function hashStr(str) {
+  let h = 2166136261;
+  for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return h >>> 0;
+}
+function dailyOf(u) {
+  const m = metaOf(u);
+  const T = SH?.Pt || {};
+  const ids = Object.keys(T);
+  const today = dayKey();
+  let d = m.daily;
+  if (!d || d.day !== today || (!d.tasks.length && ids.length)) {
+    // Racha: si ayer no recogiste ninguno, vuelve al día 1
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    let streak = d?.streak || { day: 1, lit: false, count: 0 };
+    if (d && d.streak?.lit && d.day === dayKey(y)) streak = { day: (streak.day % 7) + 1, lit: false, count: streak.count };
+    else if (!(d && d.day === dayKey(y) && d.streak?.lit)) streak = { day: 1, lit: false, count: 0 };
+    // Tres encargos distintos del día (siempre los mismos ese día)
+    const pool = [...ids];
+    const pickN = [];
+    let h = hashStr(today + (u.id || ""));
+    while (pickN.length < 3 && pool.length) {
+      h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0;
+      pickN.push(pool.splice(h % pool.length, 1)[0]);
+    }
+    d = m.daily = {
+      day: today,
+      tasks: pickN.map((id) => ({ id, progress: 0, done: false, claimed: false })),
+      bonus: { ready: false, claimed: false },
+      streak,
+      base: { ...(m.stats || {}) },
+    };
+  }
+  d.resetsAt = nextMidnight();
+  return d;
+}
+/** Avanza los encargos con lo que trajo una expedición. */
+export function dailyProgress(u, r) {
+  const d = dailyOf(u);
+  const T = SH?.Pt || {};
+  for (const t of d.tasks) {
+    const def = T[t.id];
+    if (!def || t.done) continue;
+    let add = 0;
+    switch (def.stat) {
+      case "runs": add = 1; break;
+      case "extractions": add = r.extracted ? 1 : 0; break;
+      case "rescued": add = (r.rescued || []).length; break;
+      case "deepest": t.progress = Math.max(t.progress, r.floor || 0); break;
+      case "coop": add = r.extracted && r.coop ? 1 : 0; break;
+      case "coins": add = r.coins || 0; break;
+    }
+    t.progress += add;
+    if (t.progress >= def.goal) t.done = true;
+  }
+}
+function addRes(g, rw) {
+  for (const [k, v] of Object.entries(rw || {})) g[k] = (g[k] || 0) + v;
+}
+function claimDaily(u, id) {
+  const d = dailyOf(u);
+  const g = guildOf(u);
+  const st = metaOf(u).stats;
+  if (id === (SH?.It || "bonus")) {
+    if (!d.bonus.ready || d.bonus.claimed) return false;
+    d.bonus.claimed = true;
+    addRes(g, SH?.Ft);
+    st.dailyBonus = (st.dailyBonus || 0) + 1;
+    return true;
+  }
+  const t = d.tasks.find((x) => x.id === id);
+  if (!t || !t.done || t.claimed) return false;
+  t.claimed = true;
+  addRes(g, SH?.Pt?.[id]?.reward);
+  st.dailies = (st.dailies || 0) + 1;
+  // El primer encargo recogido del día enciende la racha y da su premio
+  if (!d.streak.lit) {
+    d.streak.lit = true;
+    d.streak.count = (d.streak.count || 0) + 1;
+    addRes(g, (SH?.ti || [])[d.streak.day - 1]);
+  }
+  if (d.tasks.every((x) => x.claimed)) d.bonus.ready = true;
+  return true;
+}
+route("POST", "/meta/daily/:id/claim", (c) => {
+  if (!claimDaily(c.user, c.params.id)) return fail(400, "Aún no puedes recogerlo");
+  save();
+  return ok(metaView(c.user));
+});
+
 route("GET", "/meta", (c) => ok(metaView(c.user)));
 route("POST", "/meta/achievements/:id/claim", (c) => {
   const a = SH?.N?.[c.params.id];

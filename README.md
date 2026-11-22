@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.10)
+## Qué funciona (0.11)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -68,11 +68,20 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - Campamentos cada 5 pisos: saco de dormir (el grupo recupera media vida, se paga con Pokecoins) y hoguera.
   Al vencer al guardián se abre la Etapa siguiente para empezar ahí la próxima vez.
 
+- Objetos hondos ("¡Objeto antiguo!"): uno por capa honda, con su extra (Raíz Grande · Antigua, Periscopio · de Bruma,
+  Pila · Rúnica…). Los suelta el alfa de la capa y a veces un cofre.
+- Alfas de la capa honda con su regla: Enraizado (anillo de raíces), del Foso (en el centro del sumidero), de Escoria
+  (casi inmune con la marea alta), Torrente y Glaciar (cargan; el Glaciar queda aturdido si choca), de la Bruma, Centinela
+  (solo sobre una losa encendida), Micelio (más fuerte y mejor botín) y de la Tormenta (llama a los rayos).
+- Encargos del día: tres al día de la lista del juego, racha de 7 días con sus premios y premio por los tres;
+  se renuevan a medianoche.
+- Ampliar terreno (parcelas con el coste y el piso que pide el juego) y quemar árboles del pueblo con un Pokémon de fuego.
+
 ## Pendiente
 
-Objetos hondos (variantes de cada capa) y alfas especiales de la capa honda, diarias, tutorial guiado completo,
-Pokédex completa, disfraces, ampliar terreno y la quema de árboles. Los amigos, clanes y clasificaciones en línea
-no existen sin internet.
+Cuaderno de Rutas (las notas de cada capa), tutorial guiado completo y Pokédex completa. Los eventos de temporada
+(Mansión Encantada con sus disfraces, raid de Arceus y Flauta Azur) los activa el servidor del juego en fechas
+concretas. Los amigos, clanes y clasificaciones en línea no existen sin internet.
 
 ## Estructura
 

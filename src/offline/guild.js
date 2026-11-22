@@ -286,6 +286,32 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
     g.boxes = (g.boxes || 0) + 1;
   }));
 
+  // ---- Ampliar terreno: parcelas del pueblo (tablas del juego: Xn parcelas, Xi si se puede, ds coste, fs piso necesario) ----
+  route("POST", "/guild/expand/:id", G((g, c) => {
+    const id = c.params.id;
+    const P = M.Xn?.[id];
+    if (!P) throw err("Esa parcela no existe");
+    const exp = g.expansions || 0;
+    if (exp & (1 << P.bit)) throw err("Ya está despejada");
+    if (!M.Xi(exp, id)) throw err("Despeja antes una de al lado");
+    const n = M.ps(exp).length;
+    const need = M.fs(n);
+    if ((g.deepest || 0) < need) throw err(`Llega al piso ${need}`);
+    pay(g, M.ds(n));
+    g.expansions = exp | (1 << P.bit);
+  }));
+
+  // ---- Quemar un árbol del pueblo con un Pokémon de fuego (no vuelve a crecer) ----
+  route("POST", "/guild/trees/:tile/burn", G((g, c) => {
+    const tile = Number(c.params.tile);
+    if (!Number.isInteger(tile) || tile < 0) throw err("Ese árbol no existe");
+    const r = findR(g, c.body?.by);
+    if (r.stored) throw err("Hace falta un Pokémon de tipo Fuego en el pueblo (fuera de la caseta)");
+    if (!(M.Kr[String(r.dex).padStart(4, "0")]?.types || []).includes("fire")) throw err("Hace falta un Pokémon de tipo Fuego");
+    g.burnedTrees ||= [];
+    if (!g.burnedTrees.includes(tile)) g.burnedTrees.push(tile);
+  }));
+
   // ---- Tienda de Kecleon ----
   route("POST", "/guild/buy", G((g, c) => {
     const id = c.body?.item;

@@ -18,6 +18,8 @@ const ENEMY_HIT_R = 20;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// Casilla bajo un punto (0 suelo, 3 hierba alta, 10-13 corrientes, 15 hielo…)
+const tileAt = (L, o) => L?.tiles[Math.floor(o.y / 16)]?.[Math.floor(o.x / 16)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 /** Tabla de eficacias (tipo atacante → tipo defensor). */
@@ -642,7 +644,7 @@ export class ExpeditionRoom extends Room {
       const ram = upN(p, "ram");
       if (ram) {
         const to = { x: p.x + (m.x / len) * 50, y: p.y + (m.y / len) * 50 };
-        for (const [eid, e] of this.state.enemies) if (!e.dead && distToSegment(e, p, to) < 16) this.hitEnemy(eid, client.sessionId, p, pm, { power: (this.M._i?.ram?.power ?? 10) * ram, type: "normal", id: "tackle" });
+        for (const [eid, e] of this.state.enemies) if (!e.dead && distToSegment(e, p, to) < 16) this.hitEnemy(eid, client.sessionId, p, pm, { power: (this.M._i?.ram?.power ?? 10) * ram * (pm.deep?.ram && [10, 11, 12, 13].includes(tileAt(this.layout, p)) ? 2 : 1), type: "normal", id: "tackle" });
       }
       pm.invuln = this.M.Wt?.invulnerable ?? 0.3;
     }
@@ -959,6 +961,16 @@ export class ExpeditionRoom extends Room {
     const s = this.state;
     for (const z of this.zones) {
       z.left -= dt;
+      // Lente Amplia · de Hondonada: tus zonas sobre un sumidero atraen a los enemigos
+      if (this.meta.get(z.sid)?.deep?.area && this.hz?.holes.some((h) => dist(h, z) < h.r)) {
+        for (const e of s.enemies.values()) {
+          const d = dist(e, z);
+          if (!e.dead && !e.boss && d > 4 && d < z.r * 2) {
+            e.x += ((z.x - e.x) / d) * 40 * dt;
+            e.y += ((z.y - e.y) / d) * 40 * dt;
+          }
+        }
+      }
       z.acc += dt;
       if (z.acc >= z.every) {
         z.acc = 0;
@@ -1051,16 +1063,20 @@ export class ExpeditionRoom extends Room {
     if (!e || e.dead || !ai) return;
     const eff = effectiveness(mv.type, ai.types);
     const stab = pm.types.includes(mv.type) ? 1.2 : 1;
-    const crit = Math.random() < 0.06 + 0.05 * upN(p, "crit");
+    // Periscopio · de Bruma: desde la niebla, tus golpes son críticos
+    const crit = (pm.deep?.crit && this.state.event === "fog") || Math.random() < 0.06 + 0.05 * upN(p, "crit");
+    // Pila · Rúnica: sobre una losa rúnica encendida, tus especiales pegan aún más
+    const onRune = pm.deep?.overload && this.hz?.pend.some((w) => w.ty === "psychic" && w.circles.some((c) => dist(c, p) <= c.r + 4));
     const special = !mult.basic && mv.kind !== undefined && mv.cooldown > 1.5;
-    const upMul = (1 + (this.M._i?.power ?? 0.15) * upN(p, "power")) * (special ? 1 + (this.M._i?.overload ?? 0.2) * upN(p, "overload") : 1);
-    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1);
+    const upMul = (1 + (this.M._i?.power ?? 0.15) * upN(p, "power")) * (special ? 1 + (this.M._i?.overload ?? 0.2) * upN(p, "overload") * (onRune ? 2 : 1) : 1);
+    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1) * this.deepGuard(e, ai);
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
     ai.aggro = Math.max(ai.aggro || 0, 6);
     this.fx.push({ t: "dmg", id: eid, by: sid, x: e.x, y: e.y - 16, n: dmg, crit, eff: eff > 1 ? 1 : eff < 1 ? -1 : 0, ty: mv.type, mv: mv.id, big: big || undefined });
     // Raíz Grande: te curas el 1 % del daño (con tope por golpe)
-    const leech = upN(p, "leech");
+    // Raíz Grande · Antigua: se duplica sobre hierba alta
+    const leech = upN(p, "leech") * (pm.deep?.leech && tileAt(this.layout, p) === 3 ? 2 : 1);
     if (leech) p.hp = Math.min(p.maxHp, p.hp + Math.min(dmg * 0.01 * leech, p.maxHp * 0.006 * leech));
     // Estados del movimiento (quemado, envenenado, paralizado, congelado, mojado)
     const st = mv.applies?.status;
@@ -1101,7 +1117,8 @@ export class ExpeditionRoom extends Room {
         if (km) km.frenzyT = (this.M._i?.frenzy?.secs ?? 2) + (this.M._i?.frenzy?.perLevel ?? 1.5) * (fz - 1);
       }
     }
-    this.dropLoot(e.x, e.y, big, false, killer ? upN(killer, "fortune") : 0, e);
+    this.dropLoot(e.x, e.y, big * (ai?.loot || 1), false, killer ? upN(killer, "fortune") : 0, e);
+    if (ai?.deep) this.dropDeep(e.x + 10, e.y + 6);
     if (eid === this.bossId) {
       this.bossId = null;
       this.bossesBeaten = (this.bossesBeaten || 0) + 1;
@@ -1211,6 +1228,11 @@ export class ExpeditionRoom extends Room {
   dropLoot(x, y, big = 1, chest = false, fortune = 0, foe = null) {
     const s = this.state;
     const spot = () => this.freeSpot(x, y, chest ? 26 : 14);
+    // Objetos hondos (capa honda): el alfa de la capa siempre suelta el suyo; los cofres, a veces
+    if (s.floor > 25 && chest && Math.random() < 0.15) {
+      const q = spot();
+      this.dropDeep(q.x, q.y);
+    }
     // Objetos de mejora: cofres, alfas y jefes (los de la Biblioteca solo si están desbloqueados)
     if (chest ? Math.random() < 0.55 : foe?.boss ? true : foe?.alpha ? Math.random() < 0.6 : Math.random() < 0.015) {
       const q = spot();
@@ -1294,16 +1316,18 @@ export class ExpeditionRoom extends Room {
     } else if (pk.kind === "berry") {
       if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3);
       else s.berries = Math.min(65535, s.berries + 1);
-    } else if (pk.kind.startsWith("up-")) {
-      const k = pk.kind.slice(3);
+    } else if (pk.kind.startsWith("up-") || pk.kind.startsWith("deep-")) {
+      const deepK = pk.kind.startsWith("deep-");
+      const k = pk.kind.slice(deepK ? 5 : 3);
+      if (deepK) (pm.deep ||= {})[k] = true;
       const cur = ups(p);
       const max = this.M.gi?.[k]?.max ?? 3;
       if ((cur[k] || 0) < max) cur[k] = (cur[k] || 0) + 1;
       else s.coins += 10 + s.floor;
       p.upgrades = Object.entries(cur).map(([a, n]) => `${a}:${n}`).join(",");
       this.applyStats(p, pm);
-      const nm = this.M.vi?.[k];
-      if (nm) this.fx.push({ t: "banner", to: id, text: { es: `¡${nm.es}! ${this.M.gi[k].desc.es}`, en: `${nm.en}! ${this.M.gi[k].desc.en}` } });
+      const deepInfo = deepK ? this.M.ni?.[s.route]?.[1]?.deepItem : null;
+      this.fx.push({ t: "item", id, up: k, lv: cur[k] || 0, max, x: p.x, y: p.y, ...(deepInfo ? { deep: { names: deepInfo.names, desc: deepInfo.desc } } : {}) });
     } else if (pk.kind.startsWith("leaf-")) {
       const k = pk.kind.slice(5);
       pm.leaves ||= {};
@@ -1346,7 +1370,9 @@ export class ExpeditionRoom extends Room {
     // Casco Dentado: el atacante cuerpo a cuerpo recibe daño
     const th = upN(p, "thorns");
     const foe = from && s.enemies.get(from);
-    if (th && foe && !foe.dead && dist(foe, p) < 40) this.hitEnemy(from, id, p, pm, { power: (this.M._i?.thorns?.power ?? 10) * th, type: "normal", id: "tackle" });
+    // Casco Dentado · Glacial: sobre el hielo, las púas pegan el doble
+    const glacial = pm.deep?.thorns && tileAt(this.layout, p) === 15 ? this.M._i?.thorns?.glacial ?? 2 : 1;
+    if (th && foe && !foe.dead && dist(foe, p) < 40) this.hitEnemy(from, id, p, pm, { power: (this.M._i?.thorns?.power ?? 10) * th * glacial, type: "normal", id: "tackle" });
     // Estado según el tipo del atacante
     const fs = FOE_STATUS[ty];
     if (fs && Math.random() < 0.12) {
@@ -1690,7 +1716,10 @@ export class ExpeditionRoom extends Room {
       const bx = e.x;
       const by = e.y;
       if (e.frozen) dx = dy = 0;
-      this.stepMover(ai, e, dx, dy, { layout: this.layout, speed: ai.speed * (e.paralyzed ? 0.5 : 1), flip: false, surf: false, blockers: [] });
+      const ds = ai.deep ? this.deepStep(id, e, ai, dx, dy, players, dt) : null;
+      if (ds) ({ dx, dy } = ds);
+      this.stepMover(ai, e, dx, dy, { layout: this.layout, speed: ai.speed * (e.paralyzed ? 0.5 : 1) * (ds?.mul || 1), flip: false, surf: false, blockers: [] });
+      ds?.after?.();
       const moved = Math.hypot(e.x - bx, e.y - by) > 0.2;
       if (dx || dy) e.dir = dirOf(dx, dy);
       if (e.anim !== "Attack" || ai.cd < (e.alpha ? 0.7 : 1.0)) {
