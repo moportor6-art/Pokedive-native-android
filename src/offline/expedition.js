@@ -85,6 +85,7 @@ const xpNeed = (lv) => Math.round(12 + lv * 7 + lv * lv * 0.6);
 
 import { hazardMethods } from "./hazards.js";
 import { mansionMethods } from "./mansion.js";
+import { raidMethods } from "./raid.js";
 
 // Guardianes de los pisos 50, 75 y 100 (tabla del juego; no viene exportada en el módulo compartido)
 const LATE_GUARDIANS = {
@@ -190,6 +191,7 @@ export class ExpeditionRoom extends Room {
     on("landmark", (c) => this.onLandmark(c));
     on("camp", (c) => this.onCamp(c));
     on("mansion", (c, m) => this.onMansion(c, m));
+    on("raid", (c, m) => this.onRaid(c, m));
     on("grave", (c, m) => this.onGrave(c, m));
     on("pact", (c, m) => this.onPact(c, m));
     on("groupMode", () => {});
@@ -227,6 +229,12 @@ export class ExpeditionRoom extends Room {
     p.name = (u?.displayName || lu?.displayName || "Entrenador").slice(0, 20);
     pm.userId = u?.id || lu?.id || client.sessionId;
     pm.deepest = u?.guild ? Number(u.guild.deepest) || 0 : lu?.deepest ?? 99;
+    // Raid de Arceus: Flauta Azur o tener ya a Arceus
+    const rg = u?.guild || lu?.raid || {};
+    pm.raidFlute = !!rg.flute;
+    pm.raidHasArceus = !!rg.hasArceus || [...(rg.residents || []), ...(rg.arrivals || [])].some((r) => r.dex === "0493");
+    pm.raidWins = Number(rg.raidWins) || 0;
+    pm.raidOk = pm.raidFlute || pm.raidHasArceus;
     if (this.legendPity === undefined && u?.guild) this.legendPity = Number(u.guild.legendPity) || 0;
     const moves = Array.isArray(opts.moves) ? opts.moves.filter((m) => this.M.Rn[m]).slice(0, 2) : [];
     p.specials = moves.join(",");
@@ -411,7 +419,7 @@ export class ExpeditionRoom extends Room {
     const pool = this.speciesPool();
     s.rescueSpecies = pick(pool.rescue) || "0025";
     // El roster del estado (especies del piso) entra en el generador, como hace el cliente.
-    this.layout = this.M.$a({ route: s.route, floor: s.floor, seed: s.seed, mode: s.mansion ? "mansion" : "normal", roster: s.roster });
+    this.layout = this.M.$a({ route: s.route, floor: s.floor, seed: s.seed, mode: s.raid ? "raid" : s.mansion ? "mansion" : "normal", roster: s.roster });
     const L = this.layout;
     s.stairsX = L.stairs.x;
     s.stairsY = L.stairs.y;
@@ -424,6 +432,14 @@ export class ExpeditionRoom extends Room {
     s.rescueHp = s.rescueMaxHp;
     let i = 0;
     for (const [id, p] of s.players) this.placePlayer(id, p, i++);
+    if (s.raid) {
+      // Sala del Origen: solo Arceus
+      this.hz = null;
+      this.setupRaid();
+      this.updateRoster();
+      for (const pm of this.meta.values()) pm.floorReady = 0;
+      return;
+    }
     if (s.mansion) {
       // Mansión Encantada: su propia planta (fantasmas, farolillos, lápidas, Mimic, Spiritomb en la 10)
       this.hz = null;
@@ -615,6 +631,7 @@ export class ExpeditionRoom extends Room {
     if (!p.downed && !paused && s.phase === "exploring" && !p.evoTo && !p.frozen) {
       const env = this.playerEnv(p);
       if (p.paralyzed) env.speed *= 0.6;
+      if (this.rd) env.speed *= this.raidSlow(p);
       this.stepMover(pm, p, dx, dy, env);
       p.moving = Math.hypot(p.vx, p.vy) > 10 || p.dodgeT > 0;
       if (dx || dy) p.dir = dirOf(dx, dy);
@@ -1088,7 +1105,7 @@ export class ExpeditionRoom extends Room {
     const onRune = pm.deep?.overload && this.hz?.pend.some((w) => w.ty === "psychic" && w.circles.some((c) => dist(c, p) <= c.r + 4));
     const special = !mult.basic && mv.kind !== undefined && mv.cooldown > 1.5;
     const upMul = (1 + (this.M._i?.power ?? 0.15) * upN(p, "power")) * (special ? 1 + (this.M._i?.overload ?? 0.2) * upN(p, "overload") * (onRune ? 2 : 1) : 1);
-    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * this.pactDamage(p) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1) * this.deepGuard(e, ai);
+    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * this.pactDamage(p) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1) * this.deepGuard(e, ai) * (s.raid && eid === this.bossId ? this.raidTaken() : 1);
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
     ai.aggro = Math.max(ai.aggro || 0, 6);
@@ -1144,7 +1161,8 @@ export class ExpeditionRoom extends Room {
     if (eid === this.bossId) {
       this.bossId = null;
       this.bossesBeaten = (this.bossesBeaten || 0) + 1;
-      if (s.legend && e.species === s.legend) {
+      if (s.raid && this.rd) this.raidWin(e);
+      else if (s.legend && e.species === s.legend) {
         if (s.mansion) this.mansionWin();
         else this.guardianBeaten(e, sid);
       }
@@ -1483,7 +1501,9 @@ export class ExpeditionRoom extends Room {
     for (const [id, p] of s.players) {
       const pm = this.meta.get(id);
       const leaves = Object.fromEntries(Object.entries(pm?.leaves || {}).map(([k, v]) => [k, Math.round(v * keep)]));
-      const run = { leaves, coins, res, rescued, floor: s.floor, route: s.route, level: p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0, legendCaught: !!this.legendCaught, legendEscaped: this.legendEscaped || 0, guardianRoute: this.legendsBeaten ? s.route : null, camps: this.campsSaved || [], plate: !!this.plateWon, guardianSpecies: this.guardianSpecies || null, mansionSecs: this.mansionSecs || 0, veil: !!this.mansionVeil, raidWin: !!this.raidWon, raidJoined: !!this.raidJoined };
+      const special = !!(s.mansion || s.raid);
+      const joined = !!this.raidCaught?.includes(id);
+      const run = { leaves, coins, res, rescued: joined ? [...rescued, "0493"] : rescued, floor: special ? 0 : s.floor, route: special ? null : s.route, level: s.raid ? pm?.origLevel ?? p.level : p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0, legendCaught: !!this.legendCaught, legendEscaped: this.legendEscaped || 0, guardianRoute: this.legendsBeaten ? s.route : null, camps: this.campsSaved || [], plate: !!this.plateWon, guardianSpecies: this.guardianSpecies || null, mansionSecs: this.mansionSecs || 0, veil: !!this.mansionVeil, raidWin: !!this.raidWon, raidJoined: joined };
       if (pm?.user) grantRun(pm.user, { ...run, residentId: pm.resident });
       // Los jugadores de otros teléfonos guardan su botín al leer este mensaje (ver net.js).
       this.fx.push({ t: "end", to: id, extracted: !!extracted, lost, camps: this.campsSaved || [], stats: [], ...run, loot: res, party });
@@ -1643,6 +1663,7 @@ export class ExpeditionRoom extends Room {
     this.tickAreas(dt);
     this.tickHazards(dt);
     this.tickMansion(dt);
+    this.tickRaid(dt);
     this.tickCamp();
     this.tickArena();
     const players = [...s.players.entries()].filter(([, p]) => !p.downed);
@@ -1795,4 +1816,4 @@ function distToSegment(pt, a, b) {
   return Math.hypot(pt.x - (a.x + vx * t), pt.y - (a.y + vy * t));
 }
 
-Object.assign(ExpeditionRoom.prototype, hazardMethods, mansionMethods);
+Object.assign(ExpeditionRoom.prototype, hazardMethods, mansionMethods, raidMethods);

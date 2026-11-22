@@ -68,6 +68,8 @@ export const hazardMethods = {
     const near = players.map(([pid, p]) => ({ pid, p, d: dist(p, e) })).sort((a, b) => a.d - b.d)[0];
     ai.deepT -= dt;
     switch (ai.deep) {
+      case "raid": // Arceus no se mueve de su sitio
+        return { dx: 0, dy: 0, mul: 1 };
       case "forest": { // echa raíces en anillo quieto y cada poco se arranca y camina hacia ti
         if (ai.rooted > 0) {
           ai.rooted -= dt;

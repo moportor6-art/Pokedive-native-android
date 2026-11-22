@@ -172,7 +172,8 @@ export function grantRun(u, r) {
     if (again) g.raidCoins = (g.raidCoins || 0) + 10;
     if (g.raidWins % 10 === 0) g.raidCaps = (g.raidCaps || 0) + 1;
   }
-  if (r.raidJoined) g.flute = null;
+  // La Flauta Azur se desvanece al vencer a Arceus (las tablas se quedan)
+  if (r.raidWin) g.flute = null;
   dailyProgress(u, r);
   const meta = metaOf(u);
   const st = meta.stats;
@@ -199,7 +200,7 @@ export function lanUserOf(token, residentId) {
   if (!u) return null;
   const g = guildOf(u);
   const res = g.residents.find((r) => r.id === residentId) || g.residents.find((r) => r.partner);
-  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hms: res?.hms || [], deepest: u.guild?.deepest || 0 };
+  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hms: res?.hms || [], deepest: u.guild?.deepest || 0, raid: { flute: !!g.flute, raidWins: g.raidWins || 0, hasArceus: [...g.residents, ...g.arrivals].some((r) => r.dex === "0493") } };
 }
 
 const NATURES = ["hardy","lonely","brave","adamant","naughty","bold","docile","relaxed","impish","lax","timid","hasty","serious","jolly","naive","modest","mild","quiet","bashful","rash","calm","gentle","sassy","careful","quirky"];

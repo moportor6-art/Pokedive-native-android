@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.12)
+## Qué funciona (0.13)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -86,9 +86,14 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - Columna Lanza: tablas de los guardianes del piso 25, Flauta Azur, chapas, variocolor de Arceus, tienda y títulos.
 - **Clasificaciones locales**: tú y los jugadores con los que juegas por wifi (récords por ruta, total y Mansión).
 
+- **Raid de Arceus** en la Sala del Origen (con la Flauta Azur o si ya tienes a Arceus): intro, tres fases, tabla
+  que cambia, onda, meteoros, rayos, zona de tiempo, grieta, juicio en bandas, golpe de brazos, oscuridad, orbes de
+  tabla que lo aturden (o lo curan si no se cargan), Unown, reloj de 8 min y Sentencia final. Al vencerlo: victorias,
+  moneda de raid, chapas y la tirada para que Arceus se una (+5 % por victoria).
+
 ## Pendiente
 
-Raid de Arceus en la Sala del Origen (el combate), tienda de Kecleon dentro de las rutas, reto semanal, Cuaderno de
+Tienda de Kecleon dentro de las rutas, reto semanal, Cuaderno de
 Rutas, tutorial guiado completo y Pokédex completa. Los amigos y clanes en línea no existen sin internet.
 
 ## Estructura
