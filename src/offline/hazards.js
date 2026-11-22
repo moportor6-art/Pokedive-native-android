@@ -138,6 +138,53 @@ export const hazardMethods = {
     }
   },
 
+  /** Variante de la capa honda: los del tipo de la ruta dejan algo al caer (textos del juego). */
+  variantOnDeath(e) {
+    const s = this.state;
+    if (s.floor <= 25 || s.mansion || s.raid) return;
+    const types = this.M.Kr[e.species]?.types || [];
+    const want = s.route === "ruins" ? ["psychic", "ghost"] : [this.M.zr?.[s.route]];
+    if (!types.some((t) => want.includes(t))) return;
+    const c = { x: e.x, y: e.y, r: 22 };
+    const ty = want[0];
+    this.note(`${s.route}:1:variant`);
+    const by = {
+      forest: () => this.hzWarn([c], 1.6, "grass", (q) => {
+        for (const [id, p] of this.hzPlayers()) if (dist(p, q) <= q.r + 4) this.hzStatusPlayer(id, p, "frozen", 1);
+        this.fx.push({ t: "burst", x: q.x, y: q.y, r: q.r, ty: "grass", color: "#8fd36a" });
+      }),
+      desert: () => this.hz?.holes.push({ x: e.x, y: e.y, r: 24, vx: 0, vy: 0, fx: 0, small: true }),
+      lava: () => this.hzWarn([c], 1.4, "fire", (q) => {
+        this.fx.push({ t: "geyser", x: q.x, y: q.y });
+        this.hzHurtPlayers(q, 1, "fire", ["burning", 2]);
+      }),
+      sea: () => this.hzWarn([{ ...c, r: 28 }], 1.0, "water", (q) => {
+        this.fx.push({ t: "burst", x: q.x, y: q.y, r: q.r, ty: "water", color: "#7fc8ff" });
+        this.hzHurtPlayers(q, 0.6, "water");
+      }),
+      ice: () => this.hzWarn([c], 1.0, "ice", (q) => {
+        for (const [id, p] of this.hzPlayers()) if (dist(p, q) <= q.r + 4) this.hzStatusPlayer(id, p, "frozen", 1.2);
+        this.fx.push({ t: "burst", x: q.x, y: q.y, r: q.r, ty: "ice", color: "#9fe3ff" });
+      }),
+      swamp: () => this.hzWarn([{ ...c, r: 30 }], 1.0, "poison", (q) => {
+        this.fx.push({ t: "zone", x: q.x, y: q.y, r: q.r, dur: 3, ty: "poison", color: "#c08ae0" });
+        for (const [id, p] of this.hzPlayers()) if (dist(p, q) <= q.r + 4) this.hzStatusPlayer(id, p, "poisoned", 3);
+      }),
+      ruins: () => this.hzWarn([c], 1.3, "psychic", (q) => {
+        this.fx.push({ t: "burst", x: q.x, y: q.y, r: q.r, ty: "psychic", color: "#ff7fbf" });
+        this.hzHurtPlayers(q, 0.9, "psychic");
+        this.hzHitEnemies(q, 1.2);
+      }),
+      storm: () => this.hzWarn([c], 1.0, "electric", (q) => {
+        this.fx.push({ t: "strike", x: q.x, y: q.y });
+        this.hzHurtPlayers(q, 1, "electric", ["paralyzed", 1.2]);
+        this.hzBoltNear(q);
+      }),
+    };
+    void ty;
+    by[s.route]?.();
+  },
+
   /** Polvo Brillo · de Tormenta: si un rayo cae a tu lado sin tocarte, la esquiva se recarga al momento. */
   hzBoltNear(c) {
     for (const [id, p] of this.hzPlayers()) {
@@ -194,6 +241,7 @@ export const hazardMethods = {
   hzStatusPlayer(id, p, k, secs) {
     const pm = this.meta.get(id);
     if (!pm) return;
+    if (k !== "frozen" && this.buffOn?.("lum")) return; // Baya Ziuela: protegido de estados
     pm.st ||= {};
     pm.st[k] = Math.max(pm.st[k] || 0, secs);
     if (k in p) p[k] = true;
@@ -226,6 +274,14 @@ export const hazardMethods = {
     for (const w of hz.pend) w.t -= dt;
     const due = hz.pend.filter((w) => w.t <= 0);
     hz.pend = hz.pend.filter((w) => w.t > 0);
+    if (due.length && hz.kind) this.note(`${this.layerKey()}:hazard`);
+    if (hz.guardian && !hz.phase2) {
+      const b = s.enemies.get(this.bossId);
+      if (b && b.hp < b.maxHp / 2) {
+        hz.phase2 = true;
+        this.note(`${s.route}:1:pattern-b`);
+      }
+    }
     for (const w of due) {
       this.fx.push({ t: "hazard-off", by: w.id });
       for (const c of w.circles) w.effect(c);
@@ -240,6 +296,17 @@ export const hazardMethods = {
       }
     }
     hz.zones = hz.zones.filter((z) => z.left > 0);
+    // Peligros del mapa (hierba alta, arenas movedizas, corrientes, hielo, lluvia): se apuntan al pisarlos
+    hz.tileT = (hz.tileT || 0) - dt;
+    if (hz.tileT <= 0 && s.floor <= 25 && !s.mansion) {
+      hz.tileT = 1;
+      const tiles = { forest: [3], desert: [9], sea: [10, 11, 12, 13], ice: [15] }[s.route];
+      for (const [, p] of this.hzPlayers()) {
+        const t = this.layout.tiles[Math.floor(p.y / 16)]?.[Math.floor(p.x / 16)];
+        if (tiles?.includes(t)) this.note(`${s.route}:0:hazard`);
+      }
+      if (s.route === "swamp" && s.event === "rain") this.note("swamp:0:hazard");
+    }
     // Raíces: brotan bajo quien se queda quieto
     if (hz.kind === "roots") {
       for (const [id, p] of this.hzPlayers()) {
@@ -335,7 +402,7 @@ export const hazardMethods = {
         hz.t = 999;
         break;
       default:
-        hz.t = this.hzPulse(hz.kind, players, D);
+        hz.t = this.hzPulse(hz.kind, players, D) * (hz.phase2 ? 0.6 : 1);
     }
   },
 
@@ -439,6 +506,7 @@ export const hazardMethods = {
     const pm = this.meta.get(client.sessionId);
     if (!lm || !p || !pm || s.landmarkUsed || p.downed || dist(p, lm) > 44) return;
     s.landmarkUsed = true;
+    this.note(`${this.layerKey()}:landmark`);
     const all = [...s.players.entries()];
     const txt = (es, en) => this.fx.push({ t: "banner", text: { es, en } });
     switch (lm.kind) {

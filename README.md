@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.13)
+## Qué funciona (0.14)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -91,10 +91,19 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
   tabla que lo aturden (o lo curan si no se cargan), Unown, reloj de 8 min y Sentencia final. Al vencerlo: victorias,
   moneda de raid, chapas y la tirada para que Arceus se una (+5 % por victoria).
 
+- **Tienda de Kecleon en las rutas**: los 14 objetos del juego (Baya Zidra, Poción, Baya Ziuela, Semilla Revivir,
+  Elixir, Ataque X, Defensa X, Orbe Luminoso, Imán Potente, Llave Maestra, Pergamino, Caramelo Raro, Huevo Suerte,
+  Incienso Duplo) y mejoras para todo el grupo, con rebajas; se paga con las Pokecoins de la expedición.
+- Cofres sellados (se abren con un ataque de su tipo) y con guardián (al vencer al alfa); la Llave Maestra los abre.
+- Sello de cada ruta: el primer guardián vencido lo despierta (+10 % de daño y −10 % de daño recibido en sus pisos).
+- **Cuaderno de Rutas**: las 207 notas del juego (tipos de cada ruta, peligros, monumentos, recursos, guardianes,
+  fauna honda, variantes, alfas, objetos y patrones de los guardianes de la profundidad), que se guardan.
+- Variantes de la capa honda: los del tipo de la ruta dejan algo al caer (brote, sumidero, grieta, chorro, escarcha,
+  nube, runa o rayo). Los guardianes de la profundidad usan el peligro de su capa.
+
 ## Pendiente
 
-Tienda de Kecleon dentro de las rutas, reto semanal, Cuaderno de
-Rutas, tutorial guiado completo y Pokédex completa. Los amigos y clanes en línea no existen sin internet.
+Reto semanal y escalada, tutorial guiado completo y Pokédex completa. Los amigos y clanes en línea no existen sin internet.
 
 ## Estructura
 
