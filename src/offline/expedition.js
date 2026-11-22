@@ -6,6 +6,7 @@
 import { Room } from "@colyseus/core/Room";
 import { ExpeditionState, Player, Enemy, Pickup } from "./schema.js";
 import { guildOf, grantRun, userByToken } from "./api.js";
+import { save } from "./store.js";
 import { announce } from "./lan.js";
 
 const TICK = 33 / 1000; // paso fijo de la simulación del juego
@@ -287,6 +288,18 @@ export class ExpeditionRoom extends Room {
     s.rescuedTotal = 0;
     this.runStart = Date.now();
     this.carried = [];
+    // Lo comprado en la tienda de Kecleon se gasta al salir
+    for (const [id, p] of s.players) {
+      const pm = this.meta.get(id);
+      const g = pm?.user ? guildOf(pm.user) : null;
+      const bag = g?.bag || {};
+      pm.bag = { ...bag };
+      p.bag = Object.entries(bag).filter(([, n]) => n > 0).map(([k, n]) => `${k}:${n}`).join(",");
+      if (g) {
+        g.bag = {};
+        save();
+      }
+    }
     this.newFloor();
     s.phase = "exploring";
   }
@@ -510,7 +523,7 @@ export class ExpeditionRoom extends Room {
     if (!mv || p.downed || s.phase !== "exploring") return;
     const cdKey = slot === 1 ? "cd1" : "cd2";
     if (p[cdKey] > 0.1) return;
-    p[cdKey] = Math.min(63, mv.cooldown || 5);
+    p[cdKey] = Math.min(63, (mv.cooldown || 5) * ((pm.bag?.elixir || 0) > 0 && s.floor === this.startFloor ? 0.75 : 1));
     p.anim = mv.anim || "Attack";
     p.animSeq = (p.animSeq + 1) & 0xffff;
     const tgt = m.target && s.enemies.get(m.target);
@@ -772,6 +785,16 @@ export class ExpeditionRoom extends Room {
     p.hp = Math.max(0, p.hp - d);
     this.fx.push({ t: "dmg", id, by: from, x: p.x, y: p.y - 16, n: d, ally: true, ty });
     s.combo = 0;
+    if (p.hp <= 0 && (pm.bag?.seed || 0) > 0 && pm.seedFloor !== s.floor) {
+      // Semilla Revivir: te levantas con el 75 % (una vez por piso)
+      pm.bag.seed--;
+      pm.seedFloor = s.floor;
+      p.hp = Math.round(p.maxHp * 0.75);
+      pm.invuln = 1.5;
+      p.bag = Object.entries(pm.bag).filter(([, n]) => n > 0).map(([k, n]) => `${k}:${n}`).join(",");
+      this.fx.push({ t: "banner", to: id, text: { es: "¡La Semilla Revivir te levanta!", en: "The Revive Seed gets you up!" } });
+      return;
+    }
     if (p.hp <= 0) {
       p.downed = true;
       p.hp = 0;

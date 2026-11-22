@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.2)
+## Qué funciona (0.3)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -22,12 +22,16 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - Botín: monedas, bayas, materiales, cristales y caramelos raros que sueltan los enemigos; cofres en el mapa.
 - Jefe cada 5 pisos (legendario guardián de la ruta cada 10) que bloquea las escaleras y golpea en área.
 - Cuerda Huida tras vencer al jefe y al empezar cada tramo de 5 pisos para volver al pueblo con todo.
+- Refugio: construir, mover, mejorar y derribar edificios; trabajos de tus Pokémon y recogida de lo producido
+  (costes, mejoras, capacidades y ritmos sacados del propio juego); caseta ampliable.
+- Llegadas: los rescatados esperan en la entrada para quedarse o irse (recompensa por liberar igual que el original).
+- Tienda de Kecleon: Semilla Revivir, Elixir, Pergamino, Baya Frambu, Incienso y Cuerda Huida, según el nivel de la tienda.
 - Al volver (cuerda o caer): monedas, recursos y Pokémon rescatados se suman a tu refugio (si caes, solo una parte).
 - Salas por wifi: el que abre grupo hace de anfitrión y los demás lo ven en **Buscar grupo** o entran con su código.
 
 ## Pendiente
 
-Construcción del refugio y trabajos, tienda, mochila y objetos equipables, enemigos a distancia, estados alterados, campamentos, logros,
+Café, Dojo, Taller, Biblioteca, Centro, Herbolario y Guardería (se construyen pero aún no hacen su función), huevos, adornos, ampliar terreno, enemigos a distancia, estados alterados, campamentos, logros,
 diarias y el tutorial guiado completo. Los amigos, clanes y clasificaciones en línea no existen sin internet.
 
 ## Estructura

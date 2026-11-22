@@ -1,6 +1,7 @@
 // La API REST del juego (/api/...), respondida en el teléfono.
 import { load, save, rid } from "./store.js";
 import { listLanRooms } from "./lan.js";
+import { registerGuildRoutes } from "./guild.js";
 
 const ok = (body) => ({ status: 200, body });
 const noContent = () => ({ status: 204 });
@@ -114,7 +115,9 @@ export function grantRun(u, r) {
   const g = guildOf(u);
   g.poke = (g.poke || 0) + (r.coins || 0);
   g.deepest = Math.max(g.deepest || 0, r.floor || 0);
-  for (const dex of r.rescued || []) g.residents.push(newResident(dex));
+  // Como en el original, los rescatados esperan en la entrada del refugio (Llegadas) para darles la bienvenida.
+  for (const dex of r.rescued || [])
+    g.arrivals.push(newResident(dex, { originFloor: r.floor || 1, nature: NATURES[Math.floor(Math.random() * 25)], ivs: { hp: iv(), atk: iv(), def: iv(), spa: iv(), spd: iv(), spe: iv() } }));
   for (const [k, v] of Object.entries(r.res || {})) g[k] = (g[k] || 0) + (v || 0);
   const res = g.residents.find((x) => x.id === r.residentId) || g.residents.find((x) => x.partner);
   if (res && r.level) res.level = Math.max(res.level || 1, r.level);
@@ -147,6 +150,9 @@ export function lanUserOf(token, residentId) {
   return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1 };
 }
 
+const NATURES = ["hardy","lonely","brave","adamant","naughty","bold","docile","relaxed","impish","lax","timid","hasty","serious","jolly","naive","modest","mild","quiet","bashful","rash","calm","gentle","sassy","careful","quirky"];
+const iv = () => Math.floor(Math.random() * 32);
+
 let residentSeq = 0;
 export function newResident(dex, extra = {}) {
   return {
@@ -154,6 +160,7 @@ export function newResident(dex, extra = {}) {
     id: Date.now().toString(36) + (residentSeq++).toString(36) + rid(4),
     dex: String(dex).padStart(4, "0"),
     at: Date.now(),
+    joinedAt: Date.now(),
     ...extra,
   };
 }
@@ -287,6 +294,8 @@ route("GET", "/users/:id/profile", (c) => {
   return ok({ id: c.params.id, displayName: u?.displayName || "Entrenador", avatar: u?.avatar ?? null, frame: u?.frame ?? null, deepest: u?.guild?.deepest || 0, clan: null, friend: false, achievements: [] });
 });
 route("POST", "/expedition/saved/abandon", () => noContent());
+
+registerGuildRoutes(route, { ok, guildOf, newResident });
 
 export async function handleApi(method, path, query, body, headers) {
   const user = userOf(headers);
