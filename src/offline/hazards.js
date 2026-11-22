@@ -13,7 +13,7 @@ export const hazardMethods = {
     const L = this.layout;
     const layer = s.floor > 25 ? 1 : 0;
     const info = this.M.ni?.[s.route]?.[layer];
-    this.hz = { kind: L.boss ? null : info?.hazard || null, layer, t: 3, pend: [], zones: [], holes: [], seq: 0, fogOn: false };
+    this.hz = { kind: L.boss || s.tutorial ? null : info?.hazard || null, layer, t: 3, pend: [], zones: [], holes: [], seq: 0, fogOn: false };
     s.landmarkUsed = false;
     const k = this.hz.kind;
     if (k === "sinkholes") {

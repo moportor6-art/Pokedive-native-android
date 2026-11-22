@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.14)
+## Qué funciona (0.15)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -101,9 +101,15 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - Variantes de la capa honda: los del tipo de la ruta dejan algo al caer (brote, sumidero, grieta, chorro, escarcha,
   nube, runa o rayo). Los guardianes de la profundidad usan el peligro de su capa.
 
+- **Reto semanal**: una regla del juego por semana (Cañón de cristal, Horda, Ayuno, Noche cerrada) y su propia ruta,
+  sin Etapas, empezando en el piso 1; guarda tu mejor piso de la semana y sale en la clasificación local.
+- **Tutorial guiado** completo: el claro del bosque, Lampent guiando y Growlithe perdido, como en el original.
+- **Pokédex completa**: registra todos los que tienes o has tenido y los que has visto en las expediciones.
+
 ## Pendiente
 
-Reto semanal y escalada, tutorial guiado completo y Pokédex completa. Los amigos y clanes en línea no existen sin internet.
+Nada del juego en solitario o por wifi. Lo que necesita los servidores del juego (amigos y clanes en línea, la
+Escalada de clan) no está: es una preservación offline, con partidas en compañía por wifi.
 
 ## Estructura
 

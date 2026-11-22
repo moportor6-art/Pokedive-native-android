@@ -103,6 +103,7 @@ export function normalizeGuild(g) {
   const base = newGuild();
   for (const k of Object.keys(base)) if (g[k] === undefined) g[k] = base[k];
   for (const [k, v] of Object.entries(g.guardians || {})) if (typeof v !== "string") delete g.guardians[k];
+  for (const r of [...g.residents, ...g.arrivals]) r.dex = Number(r.dex);
   for (const r of g.residents) {
     const d = RESIDENT_DEFAULTS();
     for (const k of Object.keys(d)) if (r[k] === undefined) r[k] = d[k];
@@ -142,7 +143,7 @@ export function grantRun(u, r) {
   if (res && r.level) res.level = Math.max(res.level || 1, r.level);
   // Lo que evolucionó en la mazmorra se queda evolucionado
   if (res && r.dex && r.evolved > (res.evolved || 0)) {
-    res.dex = r.dex;
+    res.dex = Number(r.dex);
     res.evolved = r.evolved;
     res.awaken = r.awaken || 0;
     if (u.starter && res.partner) u.starter = r.dex;
@@ -175,6 +176,12 @@ export function grantRun(u, r) {
   // La Flauta Azur se desvanece al vencer a Arceus (las tablas se quedan)
   if (r.raidWin) g.flute = null;
   dailyProgress(u, r);
+  // Reto semanal: el piso más hondo de esta semana
+  if (r.challenge) {
+    const c = challengeOf(u);
+    u.challenge.best = Math.max(c.best || 0, r.challengeFloor || 0);
+    if (r.extracted) metaOf(u).stats.challengeExtractions = (metaOf(u).stats.challengeExtractions || 0) + 1;
+  }
   // Cuaderno de Rutas
   if (Array.isArray(r.notes) && r.notes.length) u.notes = [...new Set([...(u.notes || []), ...r.notes])];
   const meta = metaOf(u);
@@ -193,6 +200,8 @@ export function grantRun(u, r) {
   st.rescued = (st.rescued || 0) + (r.rescued || []).length;
   st.coins = (st.coins || 0) + (r.coins || 0);
   for (const dex of r.rescued || []) if (!meta.dex.owned.includes(dex)) meta.dex.owned.push(dex);
+  // Pokédex: los que has visto (vencidos en las expediciones)
+  for (const dex of r.seen || []) if (!meta.dex.seen.includes(dex)) meta.dex.seen.push(dex);
   save();
 }
 
@@ -202,7 +211,7 @@ export function lanUserOf(token, residentId) {
   if (!u) return null;
   const g = guildOf(u);
   const res = g.residents.find((r) => r.id === residentId) || g.residents.find((r) => r.partner);
-  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hms: res?.hms || [], deepest: u.guild?.deepest || 0, raid: { guardians: g.guardians || {}, flute: !!g.flute, raidWins: g.raidWins || 0, hasArceus: [...g.residents, ...g.arrivals].some((r) => r.dex === "0493") } };
+  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hms: res?.hms || [], deepest: u.guild?.deepest || 0, raid: { guardians: g.guardians || {}, flute: !!g.flute, raidWins: g.raidWins || 0, hasArceus: [...g.residents, ...g.arrivals].some((r) => Number(r.dex) === 493) } };
 }
 
 const NATURES = ["hardy","lonely","brave","adamant","naughty","bold","docile","relaxed","impish","lax","timid","hasty","serious","jolly","naive","modest","mild","quiet","bashful","rash","calm","gentle","sassy","careful","quirky"];
@@ -213,7 +222,7 @@ export function newResident(dex, extra = {}) {
   return {
     ...RESIDENT_DEFAULTS(),
     id: Date.now().toString(36) + (residentSeq++).toString(36) + rid(4),
-    dex: String(dex).padStart(4, "0"),
+    dex: Number(dex), // como en el juego: número de la Pokédex
     at: Date.now(),
     joinedAt: Date.now(),
     ...extra,
@@ -259,6 +268,20 @@ route("GET", "/auth/captcha", () => ok({}));
 const ROUTES9 = ["forest", "desert", "swamp", "ruins", "lava", "shroom", "ice", "sea", "storm"];
 export function featuredRoute(t = new Date()) {
   return ROUTES9[Math.floor((t.getTime() - t.getTimezoneOffset() * 60000) / 864e5) % ROUTES9.length];
+}
+// Reto semanal: una regla (tabla ot del juego) y una ruta para toda la semana, empezando el lunes (UTC).
+const MODS = ["glass", "horde", "fasting", "dark"];
+export function weekNow(t = new Date()) {
+  const d = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  const week = d.toISOString().slice(0, 10);
+  const n = Math.floor(d.getTime() / 6048e5);
+  return { week, mod: MODS[n % MODS.length], route: ROUTES9[(n * 4 + 1) % ROUTES9.length] };
+}
+function challengeOf(u) {
+  const w = weekNow();
+  const c = u.challenge?.week === w.week ? u.challenge : (u.challenge = { week: w.week, best: undefined });
+  return { mod: w.mod, week: w.week, route: w.route, best: c.best };
 }
 export const EVENT_KINDS = ["halloween", "arceus", "raid", "shiny", "coins", "route"];
 function eventsNow() {
@@ -346,7 +369,12 @@ function statValue(u, stat) {
 }
 function metaView(u) {
   const m = metaOf(u);
+  // Pokédex (números, como el juego): todos los que tienes o has tenido en el refugio cuentan como tuyos
+  const g0 = guildOf(u);
+  m.dex.owned = [...new Set([...m.dex.owned, ...g0.residents.map((r) => r.dex), ...g0.arrivals.map((r) => r.dex)].map(Number).filter((n) => n > 0))];
+  m.dex.seen = [...new Set(m.dex.seen.map(Number).filter((n) => n > 0))];
   dailyOf(u);
+  m.challenge = challengeOf(u);
   const N = SH?.N || {};
   m.claimed ||= [];
   m.achievements = Object.entries(N).map(([id, a]) => {
@@ -513,7 +541,7 @@ function localPlayers() {
       frame: u.frame ?? null,
       routes: Object.fromEntries(Object.entries(u.routes || {}).map(([k, v]) => [k, v.deepest || 0])),
       mansion: u.mansionSecs || 0,
-      challenge: g.deepest || 0,
+      challengeBest: u.challenge?.week === weekNow().week ? u.challenge.best || 0 : 0,
       local: true,
     });
   }
@@ -532,7 +560,7 @@ route("GET", "/rankings", (c) => {
     avatar: p.avatar,
     starter: p.starter,
     frame: p.frame,
-    deepest: mansion ? 0 : biome ? p.routes?.[biome] || 0 : Object.values(p.routes || {}).reduce((a, b) => a + b, 0),
+    deepest: mansion ? 0 : period === "challenge" ? p.challengeBest || 0 : biome ? p.routes?.[biome] || 0 : Object.values(p.routes || {}).reduce((a, b) => a + b, 0),
     secs: p.mansion || 0,
   }));
   rows = mansion ? rows.filter((r) => r.secs > 0).sort((a, b) => a.secs - b.secs) : rows.filter((r) => r.deepest > 0).sort((a, b) => b.deepest - a.deepest);

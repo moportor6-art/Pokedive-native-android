@@ -5,7 +5,7 @@
 // El resto (enemigos, daño, experiencia, rescates, escaleras, botín) está escrito desde cero para el port.
 import { Room } from "@colyseus/core/Room";
 import { ExpeditionState, Player, Enemy, Pickup, Projectile } from "./schema.js";
-import { guildOf, grantRun, userByToken, rememberPlayers, featuredRoute } from "./api.js";
+import { guildOf, grantRun, userByToken, rememberPlayers, featuredRoute, weekNow } from "./api.js";
 // Evento de Pokecoins (siempre activo): el doble
 const COIN_EVENT = 2;
 import { save } from "./store.js";
@@ -194,6 +194,19 @@ export class ExpeditionRoom extends Room {
     on("mansion", (c, m) => this.onMansion(c, m));
     on("raid", (c, m) => this.onRaid(c, m));
     on("buy", (c, m) => this.onBuy(c, m));
+    on("challenge", (c, m) => {
+      // Reto semanal (el de clan necesita clanes en línea: aquí va como el semanal)
+      if (c.sessionId !== s.host || s.phase !== "lobby") return;
+      if (!m?.on) {
+        s.challenge = "";
+        return;
+      }
+      const w = weekNow();
+      s.challenge = w.mod;
+      s.route = w.route;
+      this.startFloor = 1;
+      this.beginRun();
+    });
     on("grave", (c, m) => this.onGrave(c, m));
     on("pact", (c, m) => this.onPact(c, m));
     on("groupMode", () => {});
@@ -234,7 +247,7 @@ export class ExpeditionRoom extends Room {
     // Raid de Arceus: Flauta Azur o tener ya a Arceus
     const rg = u?.guild || lu?.raid || {};
     pm.raidFlute = !!rg.flute;
-    pm.raidHasArceus = !!rg.hasArceus || [...(rg.residents || []), ...(rg.arrivals || [])].some((r) => r.dex === "0493");
+    pm.raidHasArceus = !!rg.hasArceus || [...(rg.residents || []), ...(rg.arrivals || [])].some((r) => Number(r.dex) === 493);
     pm.raidWins = Number(rg.raidWins) || 0;
     pm.raidOk = pm.raidFlute || pm.raidHasArceus;
     // Sello de la ruta despierto: +10 % de daño y −10 % de daño recibido en sus pisos
@@ -372,6 +385,7 @@ export class ExpeditionRoom extends Room {
     this.legendEscaped = 0;
     this.campsSaved = [];
     this.runNotes = new Set();
+    this.seenDex = new Set();
     this.shopBuys = 0;
     this.buffs = {};
     // Lo comprado en la tienda de Kecleon se gasta al salir
@@ -411,6 +425,16 @@ export class ExpeditionRoom extends Room {
   newFloor() {
     const s = this.state;
     s.seed = (Math.random() * 2 ** 31) >>> 0;
+    if (s.tutorial) {
+      // Tutorial: el claro del bosque (como el juego, un piso con forma de claro), con Growlithe perdido
+      s.route = "forest";
+      for (let sd = 1; sd < 500; sd++) {
+        if (this.M.$a({ route: "forest", floor: 1, seed: sd, mode: "tutorial", roster: "" }).shape === "clearing") {
+          s.seed = sd;
+          break;
+        }
+      }
+    }
     s.biome = s.route;
     s.enemies.clear();
     s.projectiles.clear();
@@ -426,9 +450,9 @@ export class ExpeditionRoom extends Room {
     this.enemyAI.clear();
     this.pendingHits = [];
     const pool = this.speciesPool();
-    s.rescueSpecies = pick(pool.rescue) || "0025";
+    s.rescueSpecies = s.tutorial ? this.M.ui || "0058" : pick(pool.rescue) || "0025";
     // El roster del estado (especies del piso) entra en el generador, como hace el cliente.
-    this.layout = this.M.$a({ route: s.route, floor: s.floor, seed: s.seed, mode: s.raid ? "raid" : s.mansion ? "mansion" : "normal", roster: s.roster });
+    this.layout = this.M.$a({ route: s.route, floor: s.floor, seed: s.seed, mode: s.raid ? "raid" : s.mansion ? "mansion" : s.tutorial ? "tutorial" : "normal", roster: s.roster });
     const L = this.layout;
     s.stairsX = L.stairs.x;
     s.stairsY = L.stairs.y;
@@ -459,17 +483,18 @@ export class ExpeditionRoom extends Room {
       for (const pm of this.meta.values()) pm.floorReady = 0;
       return;
     }
-    const count = Math.min(L.enemySpawns.length, 6 + Math.floor(s.floor * 0.8));
+    // Reto «Horda»: grupos más grandes
+    const count = s.tutorial ? Math.min(L.enemySpawns.length, 4) : Math.min(L.enemySpawns.length, Math.round((6 + Math.floor(s.floor * 0.8)) * (s.challenge === "horde" ? 1.6 : 1)));
     const spawns = [...L.enemySpawns].sort(() => Math.random() - 0.5).slice(0, count);
     for (const sp of spawns) this.spawnEnemy(pick(pool.foes), sp.x, sp.y);
     // Alfa de vez en cuando
-    if (s.floor % 5 !== 0 && s.floor > 2 && Math.random() < 0.35 && spawns.length) {
+    if (!s.tutorial && s.floor % 5 !== 0 && s.floor > 2 && Math.random() < 0.35 && spawns.length) {
       const sp = pick(spawns);
       this.spawnEnemy(pick(pool.alpha), sp.x + 12, sp.y, { alpha: true });
     }
     // Clima del piso: a oscuras, en penumbra, niebla, lluvia o nieve (el cliente pinta la luz y la niebla;
     // Destello y Despejar amplían la vista). En el original lo decide el servidor: aquí, por bioma y profundidad.
-    s.event = L.boss ? "" : this.rollEvent(s.route, s.floor);
+    s.event = L.boss || s.tutorial ? "" : s.challenge === "dark" ? "dark" : this.rollEvent(s.route, s.floor);
     const EV = {
       dark: ["Piso a oscuras", "Pitch-dark floor", "Destello ilumina mucho más lejos", "Flash lights much farther"],
       dim: ["Piso en penumbra", "Dim floor", "Se ve menos de lo normal", "You see less than usual"],
@@ -503,11 +528,13 @@ export class ExpeditionRoom extends Room {
     // Cofres del mapa
     for (const c of L.chests || []) this.spawnPickup("chest", c.x, c.y);
     // Halloween (siempre activo): calabazas llenas de Caramelos
-    if (!L.boss) this.spawnPumpkins();
+    if (!L.boss && !s.tutorial) this.spawnPumpkins();
     // Cofres sellados / con guardián, tienda de Kecleon y objetos que duran 3 pisos
     this.chestGuard = null;
-    this.sealChests();
-    this.setupShop();
+    if (!s.tutorial) {
+      this.sealChests();
+      this.setupShop();
+    }
     this.tickBuffsFloor();
     // Cuerda Huida: cada 5 pisos aparece junto a la salida para volver al pueblo con todo
     if (!L.boss && s.floor > 1 && (s.floor - 1) % 5 === 0) {
@@ -864,7 +891,7 @@ export class ExpeditionRoom extends Room {
     }
     this.fx.push({ t: "capture", x: e.x, y: e.y, ok, species: s.legend, by: sid });
     // Se abre la Etapa siguiente: la próxima vez se puede empezar en el piso de después
-    if (!this.campsSaved.includes(s.floor + 1)) this.campsSaved.push(s.floor + 1);
+    if (!s.challenge && !this.campsSaved.includes(s.floor + 1)) this.campsSaved.push(s.floor + 1);
     this.fx.push({ t: "camp-saved", floor: s.floor + 1 });
     if (a) {
       a.won = true;
@@ -1135,7 +1162,7 @@ export class ExpeditionRoom extends Room {
     const onRune = pm.deep?.overload && this.hz?.pend.some((w) => w.ty === "psychic" && w.circles.some((c) => dist(c, p) <= c.r + 4));
     const special = !mult.basic && mv.kind !== undefined && mv.cooldown > 1.5;
     const upMul = (1 + (this.M._i?.power ?? 0.15) * upN(p, "power")) * (special ? 1 + (this.M._i?.overload ?? 0.2) * upN(p, "overload") * (onRune ? 2 : 1) : 1);
-    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * this.pactDamage(p) * (this.buffOn("xattack") ? 1.2 : 1) * (pm.seal && !s.mansion && !s.raid ? 1 + (this.M.cn?.damage ?? 0.1) : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1) * this.deepGuard(e, ai) * (s.raid && eid === this.bossId ? this.raidTaken() : 1);
+    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * this.pactDamage(p) * (s.challenge === "glass" ? 1.5 : 1) * (this.buffOn("xattack") ? 1.2 : 1) * (pm.seal && !s.mansion && !s.raid ? 1 + (this.M.cn?.damage ?? 0.1) : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1) * this.deepGuard(e, ai) * (s.raid && eid === this.bossId ? this.raidTaken() : 1);
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
     ai.aggro = Math.max(ai.aggro || 0, 6);
@@ -1165,6 +1192,7 @@ export class ExpeditionRoom extends Room {
     if (!e || e.dead) return;
     e.dead = true;
     this.noteKill(e, ai);
+    (this.seenDex ||= new Set()).add(e.species);
     this.variantOnDeath(e);
     this.onEnemyGone(eid);
     // Pacto de las almas: cada enemigo vencido cura un 5 % de los PS máximos
@@ -1341,7 +1369,7 @@ export class ExpeditionRoom extends Room {
     }
     if (Math.random() < (chest ? 0.7 : 0.18 * big)) {
       const q = spot();
-      this.spawnPickup("berry", q.x, q.y);
+      if (s.challenge !== "fasting") this.spawnPickup("berry", q.x, q.y);
     }
     if (Math.random() < (chest ? 0.9 : 0.12 * big)) {
       const q = spot();
@@ -1440,7 +1468,7 @@ export class ExpeditionRoom extends Room {
       this.fx.push({ t: "dmg", id, by: from, x: p.x, y: p.y - 16, n: 0, ally: true, ty });
       return;
     }
-    dmg *= (1 - 0.1 * upN(p, "guard")) * (pm.taken || 1) * this.pactTaken(p) * (this.buffOn("xdefense") ? 0.7 : 1) * (pm.seal && !this.state.mansion && !this.state.raid ? 1 - (this.M.cn?.defense ?? 0.1) : 1);
+    dmg *= (1 - 0.1 * upN(p, "guard")) * (pm.taken || 1) * this.pactTaken(p) * (this.state.challenge === "glass" ? 1.5 : 1) * (this.buffOn("xdefense") ? 0.7 : 1) * (pm.seal && !this.state.mansion && !this.state.raid ? 1 - (this.M.cn?.defense ?? 0.1) : 1);
     if (pm.counter && pm.counter.t > 0 && from && s.enemies.get(from)) {
       // Contraataque (Búnker, Contraataque…): el que pega se lleva el golpe y el estado
       this.hitEnemy(from, id, p, pm, pm.counter.mv);
@@ -1517,6 +1545,8 @@ export class ExpeditionRoom extends Room {
       }
     }
     s.floor = Math.min(65535, s.floor + 1);
+    // Reto «Ayuno»: al bajar de piso recuperas una cuarta parte de la vida
+    if (s.challenge === "fasting") for (const p of s.players.values()) if (!p.downed) p.hp = Math.min(p.maxHp, p.hp + p.maxHp / 4);
     this.newFloor();
   }
 
@@ -1536,9 +1566,9 @@ export class ExpeditionRoom extends Room {
     for (const [id, p] of s.players) {
       const pm = this.meta.get(id);
       const leaves = Object.fromEntries(Object.entries(pm?.leaves || {}).map(([k, v]) => [k, Math.round(v * keep)]));
-      const special = !!(s.mansion || s.raid);
+      const special = !!(s.mansion || s.raid || s.challenge);
       const joined = !!this.raidCaught?.includes(id);
-      const run = { leaves, coins, res, rescued: joined ? [...rescued, "0493"] : rescued, floor: special ? 0 : s.floor, route: special ? null : s.route, level: s.raid ? pm?.origLevel ?? p.level : p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0, legendCaught: !!this.legendCaught, legendEscaped: this.legendEscaped || 0, guardianRoute: this.legendsBeaten ? s.route : null, camps: this.campsSaved || [], plate: !!this.plateWon, guardianSpecies: this.guardianSpecies || null, notes: [...(this.runNotes || [])], shopBuys: this.shopBuys || 0, mansionSecs: this.mansionSecs || 0, veil: !!this.mansionVeil, raidWin: !!this.raidWon, raidJoined: joined };
+      const run = { leaves, coins, res, rescued: joined ? [...rescued, "0493"] : rescued, floor: special ? 0 : s.floor, route: special ? null : s.route, level: s.raid ? pm?.origLevel ?? p.level : p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0, legendCaught: !!this.legendCaught, legendEscaped: this.legendEscaped || 0, guardianRoute: this.legendsBeaten ? s.route : null, camps: this.campsSaved || [], plate: !!this.plateWon, guardianSpecies: this.guardianSpecies || null, notes: [...(this.runNotes || [])], seen: [...(this.seenDex || [])], challenge: !!s.challenge, challengeFloor: s.challenge ? s.floor : 0, shopBuys: this.shopBuys || 0, mansionSecs: this.mansionSecs || 0, veil: !!this.mansionVeil, raidWin: !!this.raidWon, raidJoined: joined };
       if (pm?.user) grantRun(pm.user, { ...run, residentId: pm.resident });
       // Los jugadores de otros teléfonos guardan su botín al leer este mensaje (ver net.js).
       this.fx.push({ t: "end", to: id, extracted: !!extracted, lost, camps: this.campsSaved || [], stats: [], ...run, loot: res, party });
@@ -1630,7 +1660,9 @@ export class ExpeditionRoom extends Room {
             }
             continue;
           }
-          this.goNextFloor();
+          // Tutorial: una sola planta; al llegar a la escalera con Growlithe, termina
+          if (s.tutorial) this.endRun(true);
+          else this.goNextFloor();
           break;
         }
       }
