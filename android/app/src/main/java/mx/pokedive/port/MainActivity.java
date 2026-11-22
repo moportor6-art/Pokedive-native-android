@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private LanManager lan;
+    private Updater updater;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -65,9 +66,11 @@ public class MainActivity extends Activity {
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setUserAgentString(s.getUserAgentString() + " PokeDiveAndroid");
 
+        updater = new Updater(this, web);   // antes de cargar: decide de dónde sale cada archivo del juego
+        final Updater upd = updater;
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                 .setDomain(HOST)
-                .addPathHandler("/", new WwwHandler(getAssets()))
+                .addPathHandler("/", new WwwHandler(getAssets(), upd))
                 .build();
 
         web.setWebViewClient(new WebViewClient() {
@@ -95,6 +98,8 @@ public class MainActivity extends Activity {
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl(START_URL);
+        // Busca una versión nueva al abrir (sin internet no pasa nada; el juego sigue siendo 100 % offline)
+        web.postDelayed(() -> updater.check(false), 5000);
     }
 
     private void hideSystemUi() {
@@ -178,11 +183,18 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void lanText(String id, String text) { lan.sendText(id, text); }
         @JavascriptInterface public void lanClose(String id) { lan.close(id); }
         @JavascriptInterface public String lanInfo() { return lan.infoJson(); }
+        // Actualizador
+        @JavascriptInterface public String updInfo() { return updater.info(); }
+        @JavascriptInterface public void updCheck() { runOnUiThread(() -> updater.check(true)); }
+        @JavascriptInterface public void updHistory() { updater.history(); }
+        @JavascriptInterface public void updReset() { updater.reset(); }
+        @JavascriptInterface public void updBooted() { updater.booted(); }
     }
 
     /** Sirve assets/www/ del APK. */
     static class WwwHandler implements WebViewAssetLoader.PathHandler {
         private final AssetManager am;
+        private final Updater upd;
         private static final Map<String, String> MIME = new HashMap<>();
         static {
             MIME.put("html", "text/html"); MIME.put("js", "application/javascript"); MIME.put("mjs", "application/javascript");
@@ -194,7 +206,7 @@ public class MainActivity extends Activity {
             MIME.put("txt", "text/plain"); MIME.put("webmanifest", "application/manifest+json");
         }
 
-        WwwHandler(AssetManager am) { this.am = am; }
+        WwwHandler(AssetManager am, Updater upd) { this.am = am; this.upd = upd; }
 
         @Override
         public WebResourceResponse handle(@NonNull String path) {
@@ -205,7 +217,10 @@ public class MainActivity extends Activity {
             String ext = path.substring(path.lastIndexOf('.') + 1).toLowerCase();
             String mime = MIME.containsKey(ext) ? MIME.get(ext) : "application/octet-stream";
             try {
-                InputStream in = am.open("www/" + path, AssetManager.ACCESS_STREAMING);
+                // Archivos de una actualización descargada antes que los del APK
+                if (upd != null && upd.isRemoved(path)) throw new IOException("quitado");
+                java.io.File f = upd == null ? null : upd.overlayFile(path);
+                InputStream in = f != null ? new java.io.FileInputStream(f) : am.open("www/" + path, AssetManager.ACCESS_STREAMING);
                 boolean text = mime.startsWith("text") || mime.endsWith("javascript") || mime.endsWith("json");
                 WebResourceResponse r = new WebResourceResponse(mime, text ? "utf-8" : null, in);
                 Map<String, String> h = new HashMap<>();

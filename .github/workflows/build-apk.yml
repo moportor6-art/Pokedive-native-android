@@ -43,6 +43,12 @@ jobs:
           mkdir -p android/app/src/main/assets
           cp -r web android/app/src/main/assets/www
 
+      # Manifiesto del contenido (va dentro de la APK): el actualizador de la app lo compara con el de la versión nueva
+      - name: Manifiesto del contenido
+        run: |
+          python3 .github/scripts/manifiesto.py ${{ github.run_number }} ${{ github.sha }} "$VERSION_NAME" \
+            android/app/src/main/assets/contenido-base.json android/app/src/main/assets/contenido-version.json
+
       - name: Compilar
         run: gradle -p android :app:assembleRelease --no-daemon --stacktrace
 
@@ -51,6 +57,9 @@ jobs:
           mkdir -p out
           cp android/app/build/outputs/apk/release/app-release.apk "out/${{ steps.ver.outputs.name }}.apk"
           ls -la out
+          python3 .github/scripts/manifiesto.py --apk "out/${{ steps.ver.outputs.name }}.apk" \
+            android/app/src/main/assets/contenido-base.json out/contenido.json
+          { git log -1 --pretty=%B | grep -v '^Co-Authored-By\|^Claude-Session'; echo; echo "Instala \`${{ steps.ver.outputs.name }}.apk\` encima de la anterior, o deja que la app se actualice sola."; } > out/notas.md
 
       - uses: actions/upload-artifact@v4
         with:
@@ -64,8 +73,9 @@ jobs:
         with:
           tag_name: v${{ steps.ver.outputs.name }}
           name: PokéDive Android ${{ steps.ver.outputs.name }}
-          files: out/*.apk
+          files: |
+            out/*.apk
+            out/contenido.json
           make_latest: true
-          body: |
-            APK de PokéDive para Android (offline + cooperativo por wifi).
-            Descarga el archivo `${{ steps.ver.outputs.name }}.apk` de abajo e instálalo encima de la versión anterior.
+          target_commitish: ${{ github.sha }}
+          body_path: out/notas.md
