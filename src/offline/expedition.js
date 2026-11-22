@@ -5,7 +5,9 @@
 // El resto (enemigos, daño, experiencia, rescates, escaleras, botín) está escrito desde cero para el port.
 import { Room } from "@colyseus/core/Room";
 import { ExpeditionState, Player, Enemy, Pickup, Projectile } from "./schema.js";
-import { guildOf, grantRun, userByToken } from "./api.js";
+import { guildOf, grantRun, userByToken, rememberPlayers, featuredRoute } from "./api.js";
+// Evento de Pokecoins (siempre activo): el doble
+const COIN_EVENT = 2;
 import { save } from "./store.js";
 import { tire } from "./guild.js";
 import { announce } from "./lan.js";
@@ -82,6 +84,7 @@ const FOE_STATUS = { fire: ["burning", 3], poison: ["poisoned", 4], electric: ["
 const xpNeed = (lv) => Math.round(12 + lv * 7 + lv * lv * 0.6);
 
 import { hazardMethods } from "./hazards.js";
+import { mansionMethods } from "./mansion.js";
 
 // Guardianes de los pisos 50, 75 y 100 (tabla del juego; no viene exportada en el módulo compartido)
 const LATE_GUARDIANS = {
@@ -186,6 +189,9 @@ export class ExpeditionRoom extends Room {
     on("evolve", (c, m) => this.onEvolveChoice(c, m));
     on("landmark", (c) => this.onLandmark(c));
     on("camp", (c) => this.onCamp(c));
+    on("mansion", (c, m) => this.onMansion(c, m));
+    on("grave", (c, m) => this.onGrave(c, m));
+    on("pact", (c, m) => this.onPact(c, m));
     on("groupMode", () => {});
     on("quick", (c, m) => this.broadcast("quick", { ...m, from: c.sessionId }));
     this.onMessage("*", (client, type, msg) => {
@@ -220,6 +226,7 @@ export class ExpeditionRoom extends Room {
     p.shiny = !!res?.shiny;
     p.name = (u?.displayName || lu?.displayName || "Entrenador").slice(0, 20);
     pm.userId = u?.id || lu?.id || client.sessionId;
+    pm.deepest = u?.guild ? Number(u.guild.deepest) || 0 : lu?.deepest ?? 99;
     if (this.legendPity === undefined && u?.guild) this.legendPity = Number(u.guild.legendPity) || 0;
     const moves = Array.isArray(opts.moves) ? opts.moves.filter((m) => this.M.Rn[m]).slice(0, 2) : [];
     p.specials = moves.join(",");
@@ -259,7 +266,7 @@ export class ExpeditionRoom extends Room {
     const ratio = p.maxHp ? p.hp / p.maxHp : 1;
     p.maxHp = maxHp;
     p.hp = Math.max(1, Math.round(maxHp * ratio));
-    p.speed = Math.round(80 * base.speed * (1 + 0.04 * upN(p, "swift")));
+    p.speed = Math.round(80 * base.speed * (1 + 0.04 * upN(p, "swift")) * (p.pact === "gloom" ? 0.85 : 1));
     p.dodgeCd = this.M.Wt?.cooldown ?? 1.2;
     p.xpNext = xpNeed(p.level);
   }
@@ -404,7 +411,7 @@ export class ExpeditionRoom extends Room {
     const pool = this.speciesPool();
     s.rescueSpecies = pick(pool.rescue) || "0025";
     // El roster del estado (especies del piso) entra en el generador, como hace el cliente.
-    this.layout = this.M.$a({ route: s.route, floor: s.floor, seed: s.seed, mode: "normal", roster: s.roster });
+    this.layout = this.M.$a({ route: s.route, floor: s.floor, seed: s.seed, mode: s.mansion ? "mansion" : "normal", roster: s.roster });
     const L = this.layout;
     s.stairsX = L.stairs.x;
     s.stairsY = L.stairs.y;
@@ -417,6 +424,14 @@ export class ExpeditionRoom extends Room {
     s.rescueHp = s.rescueMaxHp;
     let i = 0;
     for (const [id, p] of s.players) this.placePlayer(id, p, i++);
+    if (s.mansion) {
+      // Mansión Encantada: su propia planta (fantasmas, farolillos, lápidas, Mimic, Spiritomb en la 10)
+      this.hz = null;
+      this.setupMansion();
+      this.updateRoster();
+      for (const pm of this.meta.values()) pm.floorReady = 0;
+      return;
+    }
     const count = Math.min(L.enemySpawns.length, 6 + Math.floor(s.floor * 0.8));
     const spawns = [...L.enemySpawns].sort(() => Math.random() - 0.5).slice(0, count);
     for (const sp of spawns) this.spawnEnemy(pick(pool.foes), sp.x, sp.y);
@@ -460,6 +475,8 @@ export class ExpeditionRoom extends Room {
     }
     // Cofres del mapa
     for (const c of L.chests || []) this.spawnPickup("chest", c.x, c.y);
+    // Halloween (siempre activo): calabazas llenas de Caramelos
+    if (!L.boss) this.spawnPumpkins();
     // Cuerda Huida: cada 5 pisos aparece junto a la salida para volver al pueblo con todo
     if (!L.boss && s.floor > 1 && (s.floor - 1) % 5 === 0) {
       s.ropeX = L.spawns[0].x + 24;
@@ -785,6 +802,7 @@ export class ExpeditionRoom extends Room {
     const s = this.state;
     const a = this.arena;
     this.legendsBeaten = (this.legendsBeaten || 0) + 1;
+    if (s.floor === 25) this.plateWon = true;
     const razz = [...this.meta.values()].some((m) => (m.bag?.razz || 0) > 0);
     const chance = this.M.Zi ? this.M.Zi(razz, this.legendPity || 0) : Math.min(0.95, 0.35 + (razz ? 0.2 : 0) + 0.1 * (this.legendPity || 0));
     const ok = Math.random() < chance;
@@ -792,6 +810,7 @@ export class ExpeditionRoom extends Room {
     if (ok) {
       this.carried.push(s.legend);
       this.legendCaught = true;
+      if (s.floor % 25 === 0) this.guardianSpecies = s.legend;
       this.legendPity = 0;
     } else {
       this.legendEscaped = (this.legendEscaped || 0) + 1;
@@ -1069,7 +1088,7 @@ export class ExpeditionRoom extends Room {
     const onRune = pm.deep?.overload && this.hz?.pend.some((w) => w.ty === "psychic" && w.circles.some((c) => dist(c, p) <= c.r + 4));
     const special = !mult.basic && mv.kind !== undefined && mv.cooldown > 1.5;
     const upMul = (1 + (this.M._i?.power ?? 0.15) * upN(p, "power")) * (special ? 1 + (this.M._i?.overload ?? 0.2) * upN(p, "overload") * (onRune ? 2 : 1) : 1);
-    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1) * this.deepGuard(e, ai);
+    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * this.pactDamage(p) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1) * this.deepGuard(e, ai);
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
     ai.aggro = Math.max(ai.aggro || 0, 6);
@@ -1098,6 +1117,9 @@ export class ExpeditionRoom extends Room {
     const ai = this.enemyAI.get(eid);
     if (!e || e.dead) return;
     e.dead = true;
+    // Pacto de las almas: cada enemigo vencido cura un 5 % de los PS máximos
+    const kp = s.players.get(sid);
+    if (kp?.pact === "souls" && !kp.downed) kp.hp = Math.min(kp.maxHp, kp.hp + kp.maxHp * 0.05);
     e.anim = "Hurt";
     e.animSeq = (e.animSeq + 1) & 0xffff;
     ai.deadT = 1.2;
@@ -1122,7 +1144,10 @@ export class ExpeditionRoom extends Room {
     if (eid === this.bossId) {
       this.bossId = null;
       this.bossesBeaten = (this.bossesBeaten || 0) + 1;
-      if (s.legend && e.species === s.legend) this.guardianBeaten(e, sid);
+      if (s.legend && e.species === s.legend) {
+        if (s.mansion) this.mansionWin();
+        else this.guardianBeaten(e, sid);
+      }
     }
     const xp = Math.round((6 + s.floor * 2) * (e.boss ? 12 : e.alpha ? 5 : 1));
     for (const [id, p] of s.players) if (!p.downed) this.giveXp(id, p, xp);
@@ -1261,7 +1286,7 @@ export class ExpeditionRoom extends Room {
     const n = chest ? 2 + Math.floor(Math.random() * 3) : big > 1 ? 2 + Math.floor(big / 3) : 1;
     for (let i = 0; i < n; i++) {
       const q = spot();
-      this.spawnPickup("coin", q.x, q.y, Math.round((rnd(1, 3) + s.floor * 0.5) * (chest ? 2 : 1) * Math.max(1, big / 2) * (1 + 0.15 * fortune)));
+      this.spawnPickup("coin", q.x, q.y, Math.round((rnd(1, 3) + s.floor * 0.5) * (chest ? 2 : 1) * Math.max(1, big / 2) * (1 + 0.15 * fortune) * COIN_EVENT * (s.route === featuredRoute() && !s.mansion ? 1.5 : 1)));
     }
     if (Math.random() < (chest ? 0.7 : 0.18 * big)) {
       const q = spot();
@@ -1271,10 +1296,8 @@ export class ExpeditionRoom extends Room {
       const q = spot();
       this.spawnPickup("res-" + pick(RES_KINDS), q.x, q.y, chest ? 3 : 1 + Math.floor(big / 3));
     }
-    if (Math.random() < (chest ? 0.25 : 0.02 * big)) {
-      const q = spot();
-      this.spawnPickup("candy", q.x, q.y);
-    }
+    // Mansión: los fantasmas sueltan Caramelos
+    if (s.mansion) this.mansionLoot(x, y, chest ? 4 : 1 + (Math.random() < 0.4 ? 1 : 0));
     // Hojas de menta (para el Herbolario)
     if (Math.random() < (chest ? 0.35 : 0.04 * big)) {
       const q = spot();
@@ -1310,11 +1333,12 @@ export class ExpeditionRoom extends Room {
     this.pickVal.delete(kid);
     this.fx.push({ t: "pick", kind: pk.kind, x: pk.x, y: pk.y, id });
     if (pk.kind === "chest") {
-      this.dropLoot(pk.x, pk.y, 1, true);
+      if (s.mansion) this.mansionLoot(pk.x, pk.y, 4 + Math.floor(Math.random() * 4));
+      else this.dropLoot(pk.x, pk.y, 1, true);
     } else if (pk.kind === "coin") {
-      s.coins += val;
+      s.coins += val * this.pactGreed(p);
     } else if (pk.kind === "berry") {
-      if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3);
+      if (p.hp < p.maxHp && !this.pactNoHeal(p)) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3);
       else s.berries = Math.min(65535, s.berries + 1);
     } else if (pk.kind.startsWith("up-") || pk.kind.startsWith("deep-")) {
       const deepK = pk.kind.startsWith("deep-");
@@ -1343,8 +1367,12 @@ export class ExpeditionRoom extends Room {
       const k = pk.kind.slice(4);
       if (k in s) s[k] = Math.min(65535, s[k] + val);
     } else if (pk.kind === "candy") {
-      s.candies = Math.min(65535, s.candies + 1);
-      this.giveXp(id, p, p.xpNext);
+      // Caramelos de Halloween (Pacto de la codicia: el doble)
+      s.candies = Math.min(65535, s.candies + val * this.pactGreed(p));
+    } else if (pk.kind === "pumpkin") {
+      s.candies = Math.min(65535, s.candies + 3 + Math.floor(Math.random() * 4));
+    } else if (pk.kind === "mimic") {
+      this.openMimic(pk);
     }
   }
 
@@ -1359,7 +1387,7 @@ export class ExpeditionRoom extends Room {
       this.fx.push({ t: "dmg", id, by: from, x: p.x, y: p.y - 16, n: 0, ally: true, ty });
       return;
     }
-    dmg *= (1 - 0.1 * upN(p, "guard")) * (pm.taken || 1);
+    dmg *= (1 - 0.1 * upN(p, "guard")) * (pm.taken || 1) * this.pactTaken(p);
     if (pm.counter && pm.counter.t > 0 && from && s.enemies.get(from)) {
       // Contraataque (Búnker, Contraataque…): el que pega se lleva el golpe y el estado
       this.hitEnemy(from, id, p, pm, pm.counter.mv);
@@ -1449,13 +1477,16 @@ export class ExpeditionRoom extends Room {
     const res = { berries: Math.round(s.berries * keep), materials: Math.round(s.materials * keep), crystals: Math.round(s.crystals * keep), candies: Math.round(s.candies * keep), tickets: Math.round(s.tickets * keep), heartScales: Math.round((this.heartScales || 0) * keep), starPieces: Math.round((this.starPieces || 0) * keep) };
     const rescued = extracted ? [...this.carried, ...(s.rescued ? [s.rescueSpecies] : [])] : [];
     const lost = extracted ? [] : [...this.carried];
+    // Para la clasificación local (cada teléfono apunta a los demás)
+    const party = [...s.players.entries()].map(([pid, q]) => ({ userId: this.meta.get(pid)?.userId, displayName: q.name, starter: q.species, route: s.mansion ? null : s.route, floor: s.mansion ? 0 : s.floor, mansionSecs: this.mansionSecs || 0 }));
+    rememberPlayers(party);
     for (const [id, p] of s.players) {
       const pm = this.meta.get(id);
       const leaves = Object.fromEntries(Object.entries(pm?.leaves || {}).map(([k, v]) => [k, Math.round(v * keep)]));
-      const run = { leaves, coins, res, rescued, floor: s.floor, route: s.route, level: p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0, legendCaught: !!this.legendCaught, legendEscaped: this.legendEscaped || 0, guardianRoute: this.legendsBeaten ? s.route : null, camps: this.campsSaved || [] };
+      const run = { leaves, coins, res, rescued, floor: s.floor, route: s.route, level: p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0, legendCaught: !!this.legendCaught, legendEscaped: this.legendEscaped || 0, guardianRoute: this.legendsBeaten ? s.route : null, camps: this.campsSaved || [], plate: !!this.plateWon, guardianSpecies: this.guardianSpecies || null, mansionSecs: this.mansionSecs || 0, veil: !!this.mansionVeil, raidWin: !!this.raidWon, raidJoined: !!this.raidJoined };
       if (pm?.user) grantRun(pm.user, { ...run, residentId: pm.resident });
       // Los jugadores de otros teléfonos guardan su botín al leer este mensaje (ver net.js).
-      this.fx.push({ t: "end", to: id, extracted: !!extracted, lost, camps: this.campsSaved || [], stats: [], ...run, loot: res });
+      this.fx.push({ t: "end", to: id, extracted: !!extracted, lost, camps: this.campsSaved || [], stats: [], ...run, loot: res, party });
     }
     this.flushFx();
     this.clock.setTimeout(() => this.disconnect(), 6000);
@@ -1520,7 +1551,7 @@ export class ExpeditionRoom extends Room {
             if (Math.abs(pk.x - p.x) < r && Math.abs(pk.y - p.y) < r && Math.hypot(pk.x - p.x, pk.y - p.y) < r) this.collect(id, p, pm, kid, pk);
           }
         }
-        if (!p.downed && p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.004 * dt);
+        if (!p.downed && p.hp < p.maxHp && !this.pactNoHeal(p)) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.004 * dt);
         if (!s.rescued && s.rescueSpecies && !p.downed && Math.hypot(p.x - s.rescueX, p.y - s.rescueY) < RESCUE_R) {
           s.rescued = true;
           s.escort = id;
@@ -1528,6 +1559,13 @@ export class ExpeditionRoom extends Room {
           this.fx.push({ t: "banner", text: { es: `¡${name.es} se une!`, en: `${name.en} joins you!` }, sub: { es: "Llévalo a las escaleras", en: "Take it to the stairs" } });
         }
         if (!p.downed && Math.hypot(p.x - s.stairsX, p.y - s.stairsY) < STAIRS_R) {
+          if (!this.mansionStairsOpen()) {
+            if (Date.now() - (this.lampWarned || 0) > 4000) {
+              this.lampWarned = Date.now();
+              this.fx.push({ t: "banner", to: id, text: { es: "Enciende los farolillos", en: "Light the lanterns" } });
+            }
+            continue;
+          }
           const boss = this.bossId && s.enemies.get(this.bossId);
           if (boss && !boss.dead) {
             if (Date.now() - this.bossWarned > 4000) {
@@ -1604,6 +1642,7 @@ export class ExpeditionRoom extends Room {
     this.tickShots(dt);
     this.tickAreas(dt);
     this.tickHazards(dt);
+    this.tickMansion(dt);
     this.tickCamp();
     this.tickArena();
     const players = [...s.players.entries()].filter(([, p]) => !p.downed);
@@ -1756,4 +1795,4 @@ function distToSegment(pt, a, b) {
   return Math.hypot(pt.x - (a.x + vx * t), pt.y - (a.y + vy * t));
 }
 
-Object.assign(ExpeditionRoom.prototype, hazardMethods);
+Object.assign(ExpeditionRoom.prototype, hazardMethods, mansionMethods);

@@ -312,6 +312,60 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
     if (!g.burnedTrees.includes(tile)) g.burnedTrees.push(tile);
   }));
 
+  // ---- Evento de Halloween: disfraces con Caramelos (tabla jt del juego) ----
+  route("POST", "/guild/costumes/buy", G((g, c) => {
+    const id = c.body?.costume ?? c.body?.id;
+    const cos = M.jt?.[id];
+    if (!cos || !cos.price) throw err("Ese disfraz no se vende");
+    g.costumes ||= [];
+    if (g.costumes.includes(id)) throw err("Ya lo tienes");
+    pay(g, { candies: cos.price });
+    g.costumes.push(id);
+  }));
+
+  // ---- Columna Lanza: Flauta Azur, chapas, variocolor, tienda y estilo de la raid de Arceus ----
+  const arceusOf = (g) => [...g.residents, ...g.arrivals].find((r) => r.dex === Number(M.Kn));
+  route("POST", "/guild/flute", G((g) => {
+    const all = M.U || [];
+    if (g.flute) throw err("Ya tienes la Flauta Azur");
+    if (!all.every((r) => (g.plates || []).includes(r))) throw err("Te faltan tablas");
+    g.flute = true;
+  }));
+  route("POST", "/guild/raid-cap", G((g, c) => {
+    const st = c.body?.stat;
+    const a = arceusOf(g);
+    if (!a) throw err("Arceus aún no está contigo");
+    if (!(g.raidCaps > 0)) throw err("No tienes chapas");
+    a.ivs ||= { hp: 15, atk: 15, def: 15, spa: 15, spd: 15, spe: 15 };
+    if (!(st in a.ivs) || a.ivs[st] >= 31) throw err("Ese IV ya está al máximo");
+    a.ivs[st] = 31;
+    g.raidCaps--;
+  }));
+  route("POST", "/guild/arceus-reroll", G((g) => {
+    const a = arceusOf(g);
+    if (!a || a.shiny) throw err("No hace falta");
+    pay(g, { raidCoins: 100 });
+    if (Math.random() < (M.xr ?? 0.01)) a.shiny = true;
+    return { shiny: !!a.shiny };
+  }));
+  route("POST", "/guild/raid-shop", G((g, c) => {
+    const id = c.body?.id;
+    const it = M.Sr?.[id];
+    if (!it) throw err("Eso no se vende");
+    g.raidOwned ||= [];
+    if (g.raidOwned.includes(id)) throw err("Ya lo tienes");
+    pay(g, { raidCoins: it.price });
+    g.raidOwned.push(id);
+  }));
+  route("POST", "/guild/raid-style", G((g, c) => {
+    const b = c.body || {};
+    if ("title" in b) {
+      if (b.title && !(g.raidOwned || []).includes("titulo-" + b.title)) throw err("No tienes ese título");
+      g.raidTitle = b.title || null;
+    }
+    if (Array.isArray(b.cosm)) g.raidCosm = b.cosm.filter((x) => (g.raidOwned || []).includes(x));
+  }));
+
   // ---- Tienda de Kecleon ----
   route("POST", "/guild/buy", G((g, c) => {
     const id = c.body?.item;

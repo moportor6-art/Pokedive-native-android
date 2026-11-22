@@ -59,7 +59,11 @@ export function newGuild() {
     plaza: null,
     meal: [],
     tent: null,
-    raidCosm: null,
+    raidCosm: [],
+    raidWins: 0,
+    raidCaps: 0,
+    raidOwned: [],
+    raidTitle: null,
     flute: null,
     catch: null,
     unlocked: [],
@@ -98,6 +102,7 @@ const RESIDENT_DEFAULTS = () => ({
 export function normalizeGuild(g) {
   const base = newGuild();
   for (const k of Object.keys(base)) if (g[k] === undefined) g[k] = base[k];
+  for (const [k, v] of Object.entries(g.guardians || {})) if (typeof v !== "string") delete g.guardians[k];
   for (const r of g.residents) {
     const d = RESIDENT_DEFAULTS();
     for (const k of Object.keys(d)) if (r[k] === undefined) r[k] = d[k];
@@ -128,7 +133,8 @@ export function grantRun(u, r) {
   g.deepest = Math.max(g.deepest || 0, r.floor || 0);
   // Como en el original, los rescatados esperan en la entrada del refugio (Llegadas) para darles la bienvenida.
   for (const dex of r.rescued || [])
-    g.arrivals.push(newResident(dex, { originFloor: r.floor || 1, nature: NATURES[Math.floor(Math.random() * 25)], ivs: { hp: iv(), atk: iv(), def: iv(), spa: iv(), spd: iv(), spe: iv() } }));
+    // Variocolor: 1 de cada 256, el doble con el evento de variocolores (siempre activo)
+    g.arrivals.push(newResident(dex, { shiny: Math.random() < 2 / 256, originFloor: r.floor || 1, nature: NATURES[Math.floor(Math.random() * 25)], ivs: { hp: iv(), atk: iv(), def: iv(), spa: iv(), spd: iv(), spe: iv() } }));
   for (const [k, v] of Object.entries(r.res || {})) g[k] = (g[k] || 0) + (v || 0);
   g.leaves ||= {};
   for (const [k, v] of Object.entries(r.leaves || {})) g.leaves[k] = (g.leaves[k] || 0) + (v || 0);
@@ -151,7 +157,22 @@ export function grantRun(u, r) {
   // Guardián legendario: si se queda, la mala racha vuelve a 0; si se escapa, +10 % la próxima vez
   if (r.legendCaught) g.legendPity = 0;
   else if (r.legendEscaped) g.legendPity = (g.legendPity || 0) + r.legendEscaped;
-  if (r.guardianRoute) (g.guardians ||= {})[r.guardianRoute] = true;
+  // Estatua del guardián de la ruta: la especie del legendario que se quedó contigo
+  if (r.guardianRoute && r.guardianSpecies) (g.guardians ||= {})[r.guardianRoute] = r.guardianSpecies;
+  // Evento de Arceus: el guardián del piso 25 de cada ruta guarda su tabla
+  if (r.guardianRoute && r.plate && !(g.plates ||= []).includes(r.guardianRoute)) g.plates.push(r.guardianRoute);
+  // Halloween: Caramelos; Mansión: récord de tiempo contra Spiritomb
+  g.candies = (g.candies || 0) + (r.candies || 0);
+  if (r.mansionSecs) u.mansionSecs = u.mansionSecs ? Math.min(u.mansionSecs, r.mansionSecs) : r.mansionSecs;
+  if (r.veil && !(g.costumes ||= []).includes("veil")) g.costumes.push("veil");
+  // Raid de Arceus
+  if (r.raidWin) {
+    const again = g.raidWins > 0;
+    g.raidWins = (g.raidWins || 0) + 1;
+    if (again) g.raidCoins = (g.raidCoins || 0) + 10;
+    if (g.raidWins % 10 === 0) g.raidCaps = (g.raidCaps || 0) + 1;
+  }
+  if (r.raidJoined) g.flute = null;
   dailyProgress(u, r);
   const meta = metaOf(u);
   const st = meta.stats;
@@ -178,7 +199,7 @@ export function lanUserOf(token, residentId) {
   if (!u) return null;
   const g = guildOf(u);
   const res = g.residents.find((r) => r.id === residentId) || g.residents.find((r) => r.partner);
-  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hms: res?.hms || [] };
+  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hms: res?.hms || [], deepest: u.guild?.deepest || 0 };
 }
 
 const NATURES = ["hardy","lonely","brave","adamant","naughty","bold","docile","relaxed","impish","lax","timid","hasty","serious","jolly","naive","modest","mild","quiet","bashful","rash","calm","gentle","sassy","careful","quirky"];
@@ -230,7 +251,27 @@ function route(method, pattern, fn) {
 // ---- Varios ----
 route("GET", "/beta", () => ok({ closed: false }));
 route("GET", "/auth/captcha", () => ok({}));
-route("GET", "/status", () => ok({ ok: true }));
+// Eventos: en el original los activa el servidor por fechas. Aquí están todos activos siempre (Mansión Encantada,
+// Sala del Origen y raid de Arceus, variocolores, Pokecoins) y la ruta destacada cambia cada día.
+const ROUTES9 = ["forest", "desert", "swamp", "ruins", "lava", "shroom", "ice", "sea", "storm"];
+export function featuredRoute(t = new Date()) {
+  return ROUTES9[Math.floor((t.getTime() - t.getTimezoneOffset() * 60000) / 864e5) % ROUTES9.length];
+}
+export const EVENT_KINDS = ["halloween", "arceus", "raid", "shiny", "coins", "route"];
+function eventsNow() {
+  const startsAt = "2024-01-01T00:00:00.000Z";
+  const endsAt = "2099-12-31T23:59:59.000Z";
+  const n = (es, en) => ({ es, en });
+  return [
+    { id: "halloween", kind: "halloween", name: n("Mansión Encantada", "Haunted Mansion"), startsAt, endsAt },
+    { id: "arceus", kind: "arceus", name: n("Las tablas de Arceus", "Arceus's plates"), startsAt, endsAt },
+    { id: "raid", kind: "raid", name: n("Sala del Origen", "Hall of Origin"), startsAt, endsAt },
+    { id: "shiny", kind: "shiny", name: n("Más variocolores", "More shinies"), startsAt, endsAt },
+    { id: "coins", kind: "coins", name: n("Lluvia de Pokecoins", "Pokecoin shower"), startsAt, endsAt },
+    { id: "route", kind: "route", biome: featuredRoute(), name: n("Ruta destacada del día", "Featured route of the day"), startsAt, endsAt },
+  ];
+}
+route("GET", "/status", () => ok({ ok: true, maintenance: null, announcements: [], events: eventsNow(), upcoming: [] }));
 route("GET", "/live", () => ok({}));
 route("POST", "/telemetry", () => noContent());
 route("GET", "/news", () => ok([]));
@@ -455,7 +496,62 @@ route("GET", "/groups/code/:code", (c) => {
   const r = listLanRooms().find((x) => String(x.code).toUpperCase() === code);
   return r ? ok({ roomId: r.roomId }) : fail(404, "No hay ningún grupo con ese código en tu wifi");
 });
-route("GET", "/rankings", () => ok({ entries: [], me: null }));
+// Clasificaciones locales: tú y los jugadores con los que has jugado por wifi en este teléfono.
+function localPlayers() {
+  const st = load();
+  const out = [];
+  for (const u of Object.values(st.users || {})) {
+    const g = u.guild || {};
+    out.push({
+      userId: u.id,
+      displayName: u.displayName || "Tú",
+      avatar: u.avatar || u.starter || null,
+      starter: u.starter ?? null,
+      frame: u.frame ?? null,
+      routes: Object.fromEntries(Object.entries(u.routes || {}).map(([k, v]) => [k, v.deepest || 0])),
+      mansion: u.mansionSecs || 0,
+      challenge: g.deepest || 0,
+      local: true,
+    });
+  }
+  for (const k of Object.values(st.known || {})) out.push({ ...k, local: false });
+  return out;
+}
+route("GET", "/rankings", (c) => {
+  const q = Object.fromEntries(c.query || []);
+  const period = q.period || "all";
+  const biome = q.biome || undefined;
+  const me = c.user;
+  const mansion = period === "mansion" || period === "mansion-group";
+  let rows = localPlayers().map((p) => ({
+    userId: p.userId,
+    displayName: p.displayName,
+    avatar: p.avatar,
+    starter: p.starter,
+    frame: p.frame,
+    deepest: mansion ? 0 : biome ? p.routes?.[biome] || 0 : Object.values(p.routes || {}).reduce((a, b) => a + b, 0),
+    secs: p.mansion || 0,
+  }));
+  rows = mansion ? rows.filter((r) => r.secs > 0).sort((a, b) => a.secs - b.secs) : rows.filter((r) => r.deepest > 0).sort((a, b) => b.deepest - a.deepest);
+  rows.forEach((r, i) => (r.rank = i + 1));
+  const mine = rows.find((r) => r.userId === me?.id) || null;
+  return ok({ period, biome: mansion || period === "challenge" ? undefined : biome, friends: q.scope === "friends", entries: rows.slice(0, 10), me: mine, near: [], tiers: [] });
+});
+/** Apunta a los compañeros de wifi para la clasificación local. */
+export function rememberPlayers(list) {
+  const st = load();
+  st.known ||= {};
+  for (const p of list) {
+    if (!p?.userId || st.users?.[p.userId]) continue;
+    const k = (st.known[p.userId] ||= { userId: p.userId, routes: {}, mansion: 0 });
+    k.displayName = p.displayName || k.displayName || "?";
+    k.avatar = p.avatar || p.starter || k.avatar || null;
+    k.starter = p.starter ?? k.starter ?? null;
+    if (p.route && p.floor) k.routes[p.route] = Math.max(k.routes[p.route] || 0, p.floor);
+    if (p.mansionSecs) k.mansion = k.mansion ? Math.min(k.mansion, p.mansionSecs) : p.mansionSecs;
+  }
+  save();
+}
 route("GET", "/clans/chips", () => ok({}));
 route("GET", "/users/:id/profile", (c) => {
   const u = load().users[c.params.id];

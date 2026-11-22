@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.11)
+## Qué funciona (0.12)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -77,11 +77,19 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
   se renuevan a medianoche.
 - Ampliar terreno (parcelas con el coste y el piso que pide el juego) y quemar árboles del pueblo con un Pokémon de fuego.
 
+- **Eventos siempre activos**: Halloween, tablas de Arceus, Sala del Origen, variocolores (el doble), Pokecoins (el doble)
+  y una ruta destacada que cambia cada día (más Pokecoins).
+- **Mansión Encantada** (piso 10 alcanzado): 10 plantas a oscuras generadas por el juego, farolillos de Litwick que hay
+  que encender para bajar, pactos en las lápidas (furia, codicia, penumbra, almas), cofres Mimic, zonas encantadas,
+  Caramelos y Spiritomb en la planta 10. Vencerlo da el disfraz de velo y el tiempo para la clasificación.
+- Halloween en el pueblo y en las rutas: decoración, calabazas con Caramelos, disfraces y adornos de Halloween.
+- Columna Lanza: tablas de los guardianes del piso 25, Flauta Azur, chapas, variocolor de Arceus, tienda y títulos.
+- **Clasificaciones locales**: tú y los jugadores con los que juegas por wifi (récords por ruta, total y Mansión).
+
 ## Pendiente
 
-Cuaderno de Rutas (las notas de cada capa), tutorial guiado completo y Pokédex completa. Los eventos de temporada
-(Mansión Encantada con sus disfraces, raid de Arceus y Flauta Azur) los activa el servidor del juego en fechas
-concretas. Los amigos, clanes y clasificaciones en línea no existen sin internet.
+Raid de Arceus en la Sala del Origen (el combate), tienda de Kecleon dentro de las rutas, reto semanal, Cuaderno de
+Rutas, tutorial guiado completo y Pokédex completa. Los amigos y clanes en línea no existen sin internet.
 
 ## Estructura
 

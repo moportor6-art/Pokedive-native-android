@@ -5,7 +5,7 @@
 // Las salas por wifi usan el mismo camino: el anfitrión recibe por el puente de Android los mensajes de los demás.
 import { EventEmitter } from "events";
 import { getServer } from "./server.js";
-import { handleApi, lanUserOf, grantRun, userByToken } from "./api.js";
+import { rememberPlayers, handleApi, lanUserOf, grantRun, userByToken } from "./api.js";
 import { lanRooms, remoteMatchmake, LanSocket, watchRoomData } from "./lan.js";
 
 const realFetch = window.fetch.bind(window);
@@ -92,7 +92,9 @@ export function installNet() {
           const usr = who && userByToken(who.token);
           if (usr && !who.granted) {
             who.granted = true;
-            grantRun(usr, { leaves: fx.leaves, coins: fx.coins, res: fx.res, rescued: fx.rescued, floor: fx.floor, route: fx.route, level: fx.level, dex: fx.dex, evolved: fx.evolved, awaken: fx.awaken, residentId: who.resident });
+            grantRun(usr, { ...fx, residentId: who.resident });
+            // Clasificación local: apunta a los compañeros de esta partida por wifi
+            if (Array.isArray(fx.party)) rememberPlayers(fx.party);
           }
         });
         return new LanSocket(u, lan, onData);
