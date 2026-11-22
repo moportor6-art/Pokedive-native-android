@@ -1,0 +1,18 @@
+{
+  "name": "pokedive-native-android",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build-offline.mjs",
+    "dev": "node tools/build-offline.mjs && node tools/dev-server.mjs 8080 web"
+  },
+  "devDependencies": {
+    "@colyseus/core": "0.18.29",
+    "@colyseus/schema": "5.0.50",
+    "@colyseus/shared-types": "0.18.3",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.25.0",
+    "events": "^3.3.0",
+    "ws": "^8.23.0"
+  }
+}
