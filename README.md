@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.8)
+## Qué funciona (0.9)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -48,13 +48,22 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
   aquí; si solo cambió el juego baja únicamente los archivos cambiados (comprobados uno por uno), y si cambió la parte
   nativa baja el APK y Android pide confirmar. Puedes actualizar, dejarlo para luego u omitir esa versión.
   Si una versión nueva no arranca, la app vuelve sola a la anterior. Tus partidas no se tocan.
-  (Desde la 0.8: esta hay que instalarla a mano una vez.)
+  (Desde la 0.8: esta hay que instalarla a mano una vez.) En **Ajustes → Juego → Actualizaciones** puedes buscar
+  a mano o volver a la versión que trae el APK.
+- Maestría de especiales: el aro amarillo se llena al usarlos; a los 80 usos llegan a «+» (cambian de forma) y a los
+  180 más evolucionan a ★ (Calcinación → Llamarada…), con las tablas del juego.
+- Movimientos nuevos: cada 5 niveles (y con el Pergamino, nada más salir) tu Pokémon quiere aprender uno al llegar al
+  próximo piso; eliges cuál olvidar o no aprenderlo, en la ventana del juego.
+- Clima del piso: a oscuras, penumbra, niebla, lluvia (todos mojados) o nieve; a oscuras o con niebla los enemigos te
+  ven de más cerca. Destello y Despejar amplían tu vista.
+- Malasada (empiezas con un objeto de mejora), Incienso Estrella (+50 % durante 5 pisos) y Trozos Estrella desde el
+  piso 50 (alfas, jefes y cofres, tabla del juego).
 
 ## Pendiente
 
-Pisos con niebla/oscuridad y demás peligros de cada bioma, aprender movimientos nuevos al subir de nivel,
-Malasada, Incienso y Trozos de Estrella, campamentos y hogueras, diarias, tutorial guiado completo, Pokédex completa,
-disfraces, ampliar terreno y la quema de árboles. Los amigos, clanes y clasificaciones en línea no existen sin internet.
+Capas profundas de cada bioma (raíces, socavones, marea, glaciar, niebla tóxica, runas, micelio, tormenta) con sus
+alfas, objetos y monumentos, campamentos y hogueras, diarias, tutorial guiado completo, Pokédex completa, disfraces,
+ampliar terreno y la quema de árboles. Los amigos, clanes y clasificaciones en línea no existen sin internet.
 
 ## Estructura
 

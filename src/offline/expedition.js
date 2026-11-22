@@ -178,7 +178,7 @@ export class ExpeditionRoom extends Room {
     on("tab", () => {});
     on("saveState", () => {});
     on("nextFloor", (c) => c.send("nextFloor", null));
-    on("choose", () => {});
+    on("choose", (c, m) => this.onChoose(c, m));
     on("evolve", (c, m) => this.onEvolveChoice(c, m));
     on("groupMode", () => {});
     on("quick", (c, m) => this.broadcast("quick", { ...m, from: c.sessionId }));
@@ -338,6 +338,8 @@ export class ExpeditionRoom extends Room {
     this.runStart = Date.now();
     this.carried = [];
     this.heartScales = 0;
+    this.starPieces = 0;
+    this.incenseFrom = 0;
     this.bossesBeaten = 0;
     this.legendsBeaten = 0;
     this.legendCaught = false;
@@ -348,8 +350,20 @@ export class ExpeditionRoom extends Room {
       const g = pm?.user ? guildOf(pm.user) : null;
       const bag = g?.bag || {};
       pm.bag = { ...bag };
+      // Pergamino: nada más salir quiere aprender un movimiento
+      if (pm.bag.scroll > 0) {
+        pm.bag.scroll--;
+        p.learnPending = Math.min(255, p.learnPending + 1);
+      }
       // Platos del Café: se comen al salir
       pm.meal = [...(g?.meal || [])];
+      // Malasada: empiezas con un objeto de mejora al azar
+      if (pm.meal.includes("malasada")) {
+        const k = pick(this.upgradePool());
+        const cur = ups(p);
+        cur[k] = (cur[k] || 0) + 1;
+        p.upgrades = Object.entries(cur).map(([a, n]) => `${a}:${n}`).join(",");
+      }
       if (g) g.meal = [];
       this.applyStats(p, pm);
       p.hp = p.maxHp;
@@ -404,6 +418,18 @@ export class ExpeditionRoom extends Room {
       const sp = pick(spawns);
       this.spawnEnemy(pick(pool.alpha), sp.x + 12, sp.y, { alpha: true });
     }
+    // Clima del piso: a oscuras, en penumbra, niebla, lluvia o nieve (el cliente pinta la luz y la niebla;
+    // Destello y Despejar amplían la vista). En el original lo decide el servidor: aquí, por bioma y profundidad.
+    s.event = L.boss ? "" : this.rollEvent(s.route, s.floor);
+    const EV = {
+      dark: ["Piso a oscuras", "Pitch-dark floor", "Destello ilumina mucho más lejos", "Flash lights much farther"],
+      dim: ["Piso en penumbra", "Dim floor", "Se ve menos de lo normal", "You see less than usual"],
+      fog: ["Niebla espesa", "Thick fog", "Despejar deja ver mucho más lejos", "Defog lets you see much farther"],
+      rain: ["Lluvia", "Rain", "Todos están mojados: lo Eléctrico pega más", "Everyone is wet: Electric hits harder"],
+      snow: ["Nevada", "Snowfall", "", ""],
+    }[s.event];
+    if (EV) this.fx.push({ t: "banner", text: { es: EV[0], en: EV[1] }, sub: EV[2] ? { es: EV[2], en: EV[3] } : undefined });
+
     // Pisos 25, 50, 75, 100…: arena del guardián legendario (la genera el propio generador de pisos).
     // La puerta se cierra al entrar; las escaleras no sirven hasta vencerlo.
     s.legend = "";
@@ -427,6 +453,16 @@ export class ExpeditionRoom extends Room {
     }
     this.updateRoster();
     for (const pm of this.meta.values()) pm.floorReady = 0;
+    // Incienso Estrella: se enciende solo en el primer piso del 50 para abajo
+    if (!this.incenseFrom && s.floor >= (this.M.Zr?.from ?? 50) && [...this.meta.values()].some((m) => m.bag?.incense > 0)) {
+      this.incenseFrom = s.floor;
+      for (const m of this.meta.values()) if (m.bag?.incense) m.bag.incense--;
+      this.fx.push({ t: "banner", text: { es: "¡Incienso Estrella encendido!", en: "Star Incense lit!" }, sub: { es: "+50 % de Trozos Estrella durante 5 pisos", en: "+50% Star Pieces for 5 floors" } });
+    }
+    for (const [id, p] of s.players) {
+      const pm = this.meta.get(id);
+      if (pm) this.offerLearn(p, pm);
+    }
   }
 
   speciesPool() {
@@ -627,8 +663,11 @@ export class ExpeditionRoom extends Room {
     const los = (x1, y1, x2, y2) => M.Ro(L, x1, y1 - 8, x2, y2 - 8);
     // Geometría, efectos y golpes con las MISMAS funciones del juego que usa el cliente para predecir
     const spot = M.ea(L, mv, from, aim, area);
-    const strike = mv.kind === "strike" ? M.rc(enemies, spot, from, false, los) : undefined;
-    const cast = { layout: L, move: mv, from, face: M.Aa(p.dir), spot, area, plus: false, strike };
+    // Maestría «+»: cambia la forma del especial (rayo que cae en otro, línea doble, segundo estallido…)
+    const plus = Number(p.specialLv.split(",")[slot - 1] || 0) >= 1;
+    const strike = mv.kind === "strike" ? M.rc(enemies, spot, from, plus, los) : undefined;
+    const cast = { layout: L, move: mv, from, face: M.Aa(p.dir), spot, area, plus, strike };
+    this.addMastery(p, pm, slot);
     let fxs = { now: [] };
     try {
       fxs = M.Qi(cast) || fxs;
@@ -749,6 +788,22 @@ export class ExpeditionRoom extends Room {
     }
   }
 
+  rollEvent(route, floor) {
+    if (floor < 3 || Math.random() > Math.min(0.35, 0.12 + floor * 0.01)) return "";
+    const by = {
+      forest: ["fog", "rain", "dim"],
+      desert: ["dim", "dark"],
+      lava: ["dark", "dim"],
+      sea: ["rain", "fog"],
+      ice: ["snow", "fog", "dim"],
+      swamp: ["fog", "fog", "rain"],
+      ruins: ["dark", "dark", "dim"],
+      shroom: ["dark", "dim", "fog"],
+      storm: ["rain", "dark"],
+    }[route] || ["dim"];
+    return pick(by);
+  }
+
   hasHm(id) {
     return (this.state.hms || "").split(",").includes(id);
   }
@@ -780,6 +835,66 @@ export class ExpeditionRoom extends Room {
       if (nt !== undefined) this.setTile(ty * L.width + tx, nt);
       return;
     }
+  }
+
+  /** Cada uso llena el aro amarillo: 80 usos → «+», 180 más → ★ (y el movimiento evoluciona). Tabla del juego (Vo, Ia). */
+  addMastery(p, pm, slot) {
+    const ids = p.specials.split(",");
+    const lvs = p.specialLv.split(",").map(Number);
+    pm.uses ||= [0, 0];
+    const i = slot - 1;
+    const lv = lvs[i] || 0;
+    if (lv >= 2 || !ids[i]) return;
+    const need = this.M.Vo(lv);
+    if (++pm.uses[i] >= need) {
+      pm.uses[i] = 0;
+      lvs[i] = lv + 1;
+      if (lvs[i] >= 2) {
+        const evo = this.M.Ia(ids[i]);
+        if (evo && this.M.Rn[evo]) ids[i] = evo;
+        p.specials = ids.join(",");
+      }
+      p.specialLv = lvs.join(",");
+    }
+    p.mastery = ids.map((_, k) => ((lvs[k] || 0) >= 2 ? 100 : Math.round(((pm.uses[k] || 0) / this.M.Vo(lvs[k] || 0)) * 100))).join(",");
+  }
+
+  /** Movimiento nuevo: se ofrece al llegar al piso (uno de los especiales que puede llevar por sus tipos y aún no lleva). */
+  offerLearn(p, pm) {
+    if (p.learn || !p.learnPending) return;
+    const have = new Set(p.specials.split(",").filter(Boolean));
+    for (const id of [...have]) {
+      const base = Object.keys(this.M.Rn).find((k) => this.M.Ia(k) === id);
+      if (base) have.add(base);
+    }
+    let pool = [];
+    try {
+      pool = (this.M.ko(p.species) || []).filter((m) => this.M.Rn[m] && !have.has(m));
+    } catch {}
+    p.learnPending--;
+    if (pool.length) p.learn = pick(pool);
+  }
+
+  onChoose(client, m) {
+    const p = this.state.players.get(client.sessionId);
+    const pm = this.meta.get(client.sessionId);
+    if (!p || !pm || !p.learn || (m.learn && m.learn !== p.learn)) return;
+    const i = Number(m.index);
+    if (i === 0 || i === 1) {
+      const ids = p.specials.split(",");
+      const lvs = p.specialLv.split(",");
+      while (ids.length < 2) ids.push("");
+      while (lvs.length < 2) lvs.push("0");
+      // El hueco conserva lo crecido (si ya era ★, el nuevo llega evolucionado)
+      ids[i] = Number(lvs[i]) >= 2 && this.M.Rn[this.M.Ia(p.learn)] ? this.M.Ia(p.learn) : p.learn;
+      p.specials = ids.filter((x, k) => x || k === 0).join(",");
+      p.specialLv = lvs.slice(0, p.specials.split(",").length).join(",");
+      (pm.uses ||= [0, 0])[i] = 0;
+      if (i === 0) p.cd1 = 0;
+      else p.cd2 = 0;
+    }
+    p.learn = "";
+    this.offerLearn(p, pm);
   }
 
   /** Efectos para los demás jugadores (el que lanza ya los dibujó al predecir). */
@@ -887,7 +1002,7 @@ export class ExpeditionRoom extends Room {
     const crit = Math.random() < 0.06 + 0.05 * upN(p, "crit");
     const special = !mult.basic && mv.kind !== undefined && mv.cooldown > 1.5;
     const upMul = (1 + (this.M._i?.power ?? 0.15) * upN(p, "power")) * (special ? 1 + (this.M._i?.overload ?? 0.2) * upN(p, "overload") : 1);
-    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * (e.wet && mv.type === "electric" ? 1.25 : 1);
+    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1);
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
     ai.aggro = Math.max(ai.aggro || 0, 6);
@@ -953,7 +1068,10 @@ export class ExpeditionRoom extends Room {
       pm.level = p.level + 1;
       this.applyStats(p, pm);
       p.hp = Math.min(p.maxHp, p.hp + (this.M.Tn?.heal ?? 15));
-      this.fx.push({ t: "level", id, level: p.level, learn: false });
+      // Cada 5 niveles quiere aprender un movimiento nuevo (se ofrece al llegar al próximo piso)
+      const learn = p.level % 5 === 0;
+      if (learn) p.learnPending = Math.min(255, p.learnPending + 1);
+      this.fx.push({ t: "level", id, level: p.level, learn });
     }
     p.xp = Math.min(65535, total);
     this.checkEvolve(p, pm);
@@ -1051,6 +1169,17 @@ export class ExpeditionRoom extends Room {
       const q = spot();
       this.spawnPickup("res-heartScales", q.x, q.y, foe?.boss && s.floor % 10 === 0 ? 2 : 1);
     }
+    // Trozos Estrella: desde el piso 50 (tabla Zr del juego): alfas 1, jefes 2 (+2 cada 50 pisos), cofres 25 %.
+    // Incienso Estrella: +50 % durante 5 pisos desde el primero del 50 para abajo.
+    const SP = this.M.Zr || { from: 50, step: 50, alpha: 1, boss: 2, bossStep: 2, chest: 0.25 };
+    if (s.floor >= SP.from) {
+      let n = foe?.boss ? SP.boss + SP.bossStep * Math.floor((s.floor - SP.from) / SP.step) : foe?.alpha ? SP.alpha : chest && Math.random() < SP.chest ? 1 : 0;
+      if (n && this.incenseFrom && s.floor < this.incenseFrom + 5) n = Math.ceil(n * 1.5);
+      if (n) {
+        const q = spot();
+        this.spawnPickup("res-starPieces", q.x, q.y, n);
+      }
+    }
     if (foe?.boss || (chest && Math.random() < 0.08)) {
       const q = spot();
       this.spawnPickup("ticket", q.x, q.y);
@@ -1132,6 +1261,8 @@ export class ExpeditionRoom extends Room {
       s.tickets = Math.min(65535, s.tickets + 1);
     } else if (pk.kind === "res-heartScales") {
       this.heartScales = (this.heartScales || 0) + val;
+    } else if (pk.kind === "res-starPieces") {
+      this.starPieces = Math.min(this.M.Zr?.max ?? 400, (this.starPieces || 0) + val);
     } else if (pk.kind.startsWith("res-")) {
       const k = pk.kind.slice(4);
       if (k in s) s[k] = Math.min(65535, s[k] + val);
@@ -1237,7 +1368,7 @@ export class ExpeditionRoom extends Room {
     s.phase = "ended";
     const keep = extracted ? 1 : 0.25;
     const coins = Math.round(s.coins * keep);
-    const res = { berries: Math.round(s.berries * keep), materials: Math.round(s.materials * keep), crystals: Math.round(s.crystals * keep), candies: Math.round(s.candies * keep), tickets: Math.round(s.tickets * keep), heartScales: Math.round((this.heartScales || 0) * keep) };
+    const res = { berries: Math.round(s.berries * keep), materials: Math.round(s.materials * keep), crystals: Math.round(s.crystals * keep), candies: Math.round(s.candies * keep), tickets: Math.round(s.tickets * keep), heartScales: Math.round((this.heartScales || 0) * keep), starPieces: Math.round((this.starPieces || 0) * keep) };
     const rescued = extracted ? [...this.carried, ...(s.rescued ? [s.rescueSpecies] : [])] : [];
     const lost = extracted ? [] : [...this.carried];
     for (const [id, p] of s.players) {
@@ -1438,7 +1569,9 @@ export class ExpeditionRoom extends Room {
           target = [pid, p];
         }
       }
-      const aggroR = (ai.aggro || 0) > 0 ? 260 : e.boss ? 170 : e.alpha ? 150 : 120;
+      // A oscuras o con niebla los enemigos te ven de más cerca (Destello/Despejar no les ayudan a ellos)
+      const blind = s.event === "dark" ? 0.6 : s.event === "fog" ? 0.55 : s.event === "dim" ? 0.8 : 1;
+      const aggroR = (ai.aggro || 0) > 0 ? 260 : (e.boss ? 170 : e.alpha ? 150 : 120) * blind;
       if (ai.aggro > 0) ai.aggro -= dt;
       ai.cd -= dt;
       let dx = 0;
