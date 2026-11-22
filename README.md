@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.9)
+## Qué funciona (0.10)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -59,11 +59,20 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - Malasada (empiezas con un objeto de mejora), Incienso Estrella (+50 % durante 5 pisos) y Trozos Estrella desde el
   piso 50 (alfas, jefes y cofres, tabla del juego).
 
+- Peligros de cada bioma con aviso en el suelo: rayos (Tormenta), géiseres (Volcán), losas sueltas (Ruinas), pedos de
+  lobo (Setas) y lluvia y barro (Lodazal). Hierba alta, arenas movedizas, corrientes y charcos helados van en el mapa.
+- Capa honda (pisos 26+), con su fauna propia: raíces bajo quien se queda quieto, hondonadas que se desplazan, marea de
+  lava, corrientes que se invierten, niebla tóxica en oleadas, runas en cruz, micelio y tormenta de rayos.
+- Monumentos (una vez por piso): Santuario, Obelisco, Altar, Barco hundido, Aguja de hielo, Tótem, Monolito,
+  Corro de setas y Bobina, con los efectos que describe el juego.
+- Campamentos cada 5 pisos: saco de dormir (el grupo recupera media vida, se paga con Pokecoins) y hoguera.
+  Al vencer al guardián se abre la Etapa siguiente para empezar ahí la próxima vez.
+
 ## Pendiente
 
-Capas profundas de cada bioma (raíces, socavones, marea, glaciar, niebla tóxica, runas, micelio, tormenta) con sus
-alfas, objetos y monumentos, campamentos y hogueras, diarias, tutorial guiado completo, Pokédex completa, disfraces,
-ampliar terreno y la quema de árboles. Los amigos, clanes y clasificaciones en línea no existen sin internet.
+Objetos hondos (variantes de cada capa) y alfas especiales de la capa honda, diarias, tutorial guiado completo,
+Pokédex completa, disfraces, ampliar terreno y la quema de árboles. Los amigos, clanes y clasificaciones en línea
+no existen sin internet.
 
 ## Estructura
 

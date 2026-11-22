@@ -144,6 +144,9 @@ export function grantRun(u, r) {
   if (r.route) {
     const rt = ((u.routes ||= {})[r.route] ||= { deepest: 0, camps: [] });
     rt.deepest = Math.max(rt.deepest, r.floor || 0);
+    // Etapas abiertas al vencer al guardián: se puede empezar ahí la próxima vez
+    for (const f of r.camps || []) if (!rt.camps.includes(f)) rt.camps.push(f);
+    rt.camps.sort((x, y) => x - y);
   }
   // Guardián legendario: si se queda, la mala racha vuelve a 0; si se escapa, +10 % la próxima vez
   if (r.legendCaught) g.legendPity = 0;

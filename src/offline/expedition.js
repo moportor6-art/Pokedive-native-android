@@ -79,6 +79,8 @@ const FOE_STATUS = { fire: ["burning", 3], poison: ["poisoned", 4], electric: ["
 
 const xpNeed = (lv) => Math.round(12 + lv * 7 + lv * lv * 0.6);
 
+import { hazardMethods } from "./hazards.js";
+
 // Guardianes de los pisos 50, 75 y 100 (tabla del juego; no viene exportada en el módulo compartido)
 const LATE_GUARDIANS = {
   forest: { 50: ["1017", "1016"], 75: ["0905", "0641"], 100: ["0888"] },
@@ -180,6 +182,8 @@ export class ExpeditionRoom extends Room {
     on("nextFloor", (c) => c.send("nextFloor", null));
     on("choose", (c, m) => this.onChoose(c, m));
     on("evolve", (c, m) => this.onEvolveChoice(c, m));
+    on("landmark", (c) => this.onLandmark(c));
+    on("camp", (c) => this.onCamp(c));
     on("groupMode", () => {});
     on("quick", (c, m) => this.broadcast("quick", { ...m, from: c.sessionId }));
     this.onMessage("*", (client, type, msg) => {
@@ -344,6 +348,7 @@ export class ExpeditionRoom extends Room {
     this.legendsBeaten = 0;
     this.legendCaught = false;
     this.legendEscaped = 0;
+    this.campsSaved = [];
     // Lo comprado en la tienda de Kecleon se gasta al salir
     for (const [id, p] of s.players) {
       const pm = this.meta.get(id);
@@ -429,6 +434,7 @@ export class ExpeditionRoom extends Room {
       snow: ["Nevada", "Snowfall", "", ""],
     }[s.event];
     if (EV) this.fx.push({ t: "banner", text: { es: EV[0], en: EV[1] }, sub: EV[2] ? { es: EV[2], en: EV[3] } : undefined });
+    this.setupHazards();
 
     // Pisos 25, 50, 75, 100…: arena del guardián legendario (la genera el propio generador de pisos).
     // La puerta se cierra al entrar; las escaleras no sirven hasta vencerlo.
@@ -443,6 +449,12 @@ export class ExpeditionRoom extends Room {
         s.ropeX = L.camp.rope.x;
         s.ropeY = L.camp.rope.y;
       }
+    }
+    // Campamento (cada 5 pisos, lo pone el generador): saco de dormir de pago y hoguera
+    this.campFireLit = false;
+    if (L.camp?.bag) {
+      const id = this.spawnPickup("camp", L.camp.bag.x, L.camp.bag.y);
+      s.pickups.get(id).price = Math.min(65535, 30 + s.floor * 4);
     }
     // Cofres del mapa
     for (const c of L.chests || []) this.spawnPickup("chest", c.x, c.y);
@@ -475,6 +487,12 @@ export class ExpeditionRoom extends Room {
     let foes = fit.filter(([, v]) => total(v.stats) <= cap).map(([k]) => k);
     if (foes.length < 6) foes = fit.sort((a, b) => total(a[1].stats) - total(b[1].stats)).slice(0, 12).map(([k]) => k);
     const alpha = fit.filter(([, v]) => total(v.stats) > cap && total(v.stats) <= cap + 120).map(([k]) => k);
+    // Capa honda (pisos 26+): su fauna propia (tabla del juego) se mezcla con la del bioma
+    if (s.floor > 25) {
+      const deep = (M.ni?.[s.route]?.[1]?.fauna || []).filter((d) => M.Kr[d]);
+      // ~40 % de lo que sale en la capa honda es su fauna
+      if (deep.length) foes = [...foes, ...Array.from({ length: Math.ceil((foes.length * 0.67) / deep.length) }, () => deep).flat()];
+    }
     return { foes, rescue: foes, alpha: alpha.length ? alpha : foes };
   }
 
@@ -778,6 +796,9 @@ export class ExpeditionRoom extends Room {
       this.legendPity = (this.legendPity || 0) + 1;
     }
     this.fx.push({ t: "capture", x: e.x, y: e.y, ok, species: s.legend, by: sid });
+    // Se abre la Etapa siguiente: la próxima vez se puede empezar en el piso de después
+    if (!this.campsSaved.includes(s.floor + 1)) this.campsSaved.push(s.floor + 1);
+    this.fx.push({ t: "camp-saved", floor: s.floor + 1 });
     if (a) {
       a.won = true;
       for (const i of a.gate) this.setTile(i, 0);
@@ -789,6 +810,8 @@ export class ExpeditionRoom extends Room {
   }
 
   rollEvent(route, floor) {
+    // Lodazal: su peligro de bioma es "lluvia y barro"
+    if (route === "swamp" && floor <= 25 && floor >= 2 && Math.random() < 0.5) return "rain";
     if (floor < 3 || Math.random() > Math.min(0.35, 0.12 + floor * 0.01)) return "";
     const by = {
       forest: ["fog", "rain", "dim"],
@@ -802,6 +825,35 @@ export class ExpeditionRoom extends Room {
       storm: ["rain", "dark"],
     }[route] || ["dim"];
     return pick(by);
+  }
+
+  /** Saco de dormir del campamento: el grupo recupera media vida, pagando con las Pokecoins de la expedición. */
+  onCamp(client) {
+    const s = this.state;
+    const p = s.players.get(client.sessionId);
+    if (!p || p.downed) return;
+    const entry = [...s.pickups.entries()].find(([, k]) => k.kind === "camp");
+    if (!entry || dist(entry[1], p) > 44 || s.coins < entry[1].price) return;
+    s.coins -= entry[1].price;
+    s.pickups.delete(entry[0]);
+    for (const [qid, q] of s.players) {
+      if (q.downed) continue;
+      const n = Math.round(q.maxHp / 2);
+      q.hp = Math.min(q.maxHp, q.hp + n);
+      this.fx.push({ t: "heal", id: qid, n, x: q.x, y: q.y - 20 });
+    }
+  }
+
+  tickCamp() {
+    const c = this.layout?.camp?.fire;
+    if (!c || this.campFireLit) return;
+    for (const p of this.state.players.values()) {
+      if (!p.downed && dist(p, c) < 40) {
+        this.campFireLit = true;
+        this.fx.push({ t: "fire-lit", x: c.x, y: c.y });
+        return;
+      }
+    }
   }
 
   hasHm(id) {
@@ -1002,7 +1054,7 @@ export class ExpeditionRoom extends Room {
     const crit = Math.random() < 0.06 + 0.05 * upN(p, "crit");
     const special = !mult.basic && mv.kind !== undefined && mv.cooldown > 1.5;
     const upMul = (1 + (this.M._i?.power ?? 0.15) * upN(p, "power")) * (special ? 1 + (this.M._i?.overload ?? 0.2) * upN(p, "overload") : 1);
-    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1);
+    let dmg = upMul * (mv.power || 6) * (pm.dmgMul || 1) * (pm.meal?.includes("curry") ? 1.12 : 1) * (pm.obeliskT > 0 ? 1.3 : 1) * Math.sqrt(75 / Math.max(20, ai.def)) * eff * stab * (typeof mult === "number" ? mult : mult.m) * rnd(0.9, 1.1) * (crit ? 2 : 1) * ((e.wet || s.event === "rain") && mv.type === "electric" ? 1.25 : 1);
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
     ai.aggro = Math.max(ai.aggro || 0, 6);
@@ -1374,10 +1426,10 @@ export class ExpeditionRoom extends Room {
     for (const [id, p] of s.players) {
       const pm = this.meta.get(id);
       const leaves = Object.fromEntries(Object.entries(pm?.leaves || {}).map(([k, v]) => [k, Math.round(v * keep)]));
-      const run = { leaves, coins, res, rescued, floor: s.floor, route: s.route, level: p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0, legendCaught: !!this.legendCaught, legendEscaped: this.legendEscaped || 0, guardianRoute: this.legendsBeaten ? s.route : null };
+      const run = { leaves, coins, res, rescued, floor: s.floor, route: s.route, level: p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0, legendCaught: !!this.legendCaught, legendEscaped: this.legendEscaped || 0, guardianRoute: this.legendsBeaten ? s.route : null, camps: this.campsSaved || [] };
       if (pm?.user) grantRun(pm.user, { ...run, residentId: pm.resident });
       // Los jugadores de otros teléfonos guardan su botín al leer este mensaje (ver net.js).
-      this.fx.push({ t: "end", to: id, extracted: !!extracted, lost, camps: [], stats: [], ...run, loot: res });
+      this.fx.push({ t: "end", to: id, extracted: !!extracted, lost, camps: this.campsSaved || [], stats: [], ...run, loot: res });
     }
     this.flushFx();
     this.clock.setTimeout(() => this.disconnect(), 6000);
@@ -1415,6 +1467,7 @@ export class ExpeditionRoom extends Room {
         if (p.evoTo && (p.evoT -= dt) <= 0) this.finishEvolve(id, p, pm);
         if (pm.frenzyT > 0 && (pm.frenzyT -= dt) <= 0) p.frenzy = false;
         if (pm.counter && (pm.counter.t -= dt) <= 0) pm.counter = null;
+        if (pm.obeliskT > 0) pm.obeliskT -= dt;
         if (pm.st) {
           for (const k of Object.keys(pm.st)) {
             pm.st[k] -= dt;
@@ -1436,6 +1489,7 @@ export class ExpeditionRoom extends Room {
         if (s.phase !== "exploring") continue;
         if (!p.downed) {
           for (const [kid, pk] of s.pickups) {
+            if (pk.kind === "camp") continue; // el saco de dormir se usa a propósito (mensaje "camp")
             const r = pk.kind === "chest" ? 20 : (pk.kind === "coin" ? 16 + 14 * upN(p, "magnet") : 16);
             if (Math.abs(pk.x - p.x) < r && Math.abs(pk.y - p.y) < r && Math.hypot(pk.x - p.x, pk.y - p.y) < r) this.collect(id, p, pm, kid, pk);
           }
@@ -1523,6 +1577,8 @@ export class ExpeditionRoom extends Room {
     const s = this.state;
     this.tickShots(dt);
     this.tickAreas(dt);
+    this.tickHazards(dt);
+    this.tickCamp();
     this.tickArena();
     const players = [...s.players.entries()].filter(([, p]) => !p.downed);
     for (const [id, e] of s.enemies) {
@@ -1670,3 +1726,5 @@ function distToSegment(pt, a, b) {
   const t = clamp(((pt.x - a.x) * vx + (pt.y - a.y) * vy) / l2, 0, 1);
   return Math.hypot(pt.x - (a.x + vx * t), pt.y - (a.y + vy * t));
 }
+
+Object.assign(ExpeditionRoom.prototype, hazardMethods);
