@@ -88,7 +88,7 @@ const RESIDENT_DEFAULTS = () => ({
   stored: false,
   nickname: null,
   costume: null,
-  hm: null,
+  hms: [],
   friends: {},
   evolved: 0,
   awaken: 0,
@@ -101,6 +101,11 @@ export function normalizeGuild(g) {
   for (const r of g.residents) {
     const d = RESIDENT_DEFAULTS();
     for (const k of Object.keys(d)) if (r[k] === undefined) r[k] = d[k];
+    // 0.6 guardaba una sola MO en "hm"; el juego usa la lista "hms"
+    if (r.hm) {
+      if (!r.hms.includes(r.hm)) r.hms.push(r.hm);
+      delete r.hm;
+    }
   }
   return g;
 }
@@ -140,6 +145,10 @@ export function grantRun(u, r) {
     const rt = ((u.routes ||= {})[r.route] ||= { deepest: 0, camps: [] });
     rt.deepest = Math.max(rt.deepest, r.floor || 0);
   }
+  // Guardián legendario: si se queda, la mala racha vuelve a 0; si se escapa, +10 % la próxima vez
+  if (r.legendCaught) g.legendPity = 0;
+  else if (r.legendEscaped) g.legendPity = (g.legendPity || 0) + r.legendEscaped;
+  if (r.guardianRoute) (g.guardians ||= {})[r.guardianRoute] = true;
   const meta = metaOf(u);
   const st = meta.stats;
   st.runs = (st.runs || 0) + 1;
@@ -165,7 +174,7 @@ export function lanUserOf(token, residentId) {
   if (!u) return null;
   const g = guildOf(u);
   const res = g.residents.find((r) => r.id === residentId) || g.residents.find((r) => r.partner);
-  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hm: res?.hm || null };
+  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hms: res?.hms || [] };
 }
 
 const NATURES = ["hardy","lonely","brave","adamant","naughty","bold","docile","relaxed","impish","lax","timid","hasty","serious","jolly","naive","modest","mild","quiet","bashful","rash","calm","gentle","sassy","careful","quirky"];

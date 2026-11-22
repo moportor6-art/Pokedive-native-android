@@ -492,9 +492,10 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
     const tutor = best(g, "tutor");
     if (!tutor) throw err("Primero construye el Taller de Smeargle");
     if ((tutor.level || 1) < hm.level) throw err("Mejora el Taller para enseñarla");
-    if (r.hm === id) throw err("Ya la sabe");
+    r.hms ||= [];
+    if (r.hms.includes(id)) throw err("Ya la sabe");
     pay(g, hm.cost);
-    r.hm = id;
+    r.hms.push(id);
   }));
 
   // ---- Herbolario de Bellossom: mentas y hojas ----

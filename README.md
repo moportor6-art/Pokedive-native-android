@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.6)
+## Qué funciona (0.7)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -24,8 +24,15 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - Escamas Corazón y boletos como botín; logros (los 76 del juego) con sus recompensas.
 - Evoluciones al nivel que marca el juego (y "despertar" para los que no evolucionan), y se guardan en tu refugio.
 - Botín: monedas, bayas, materiales, cristales y caramelos raros que sueltan los enemigos; cofres en el mapa.
-- Jefe cada 5 pisos (legendario guardián de la ruta cada 10) que bloquea las escaleras y golpea en área.
-- Cuerda Huida tras vencer al jefe y al empezar cada tramo de 5 pisos para volver al pueblo con todo.
+- Especiales con la geometría y los efectos del propio juego: proyectil, rayo (con cadena), anillo, estallido,
+  zona que daña con el tiempo, línea, embestida (te mueve), trampa, curación, escudo y contraataque.
+- Estadísticas con la fórmula del juego: especie, naturaleza (o menta), IVs y Dojo; cada nivel +8 % daño y +10 PS.
+- MO: Golpe Roca rompe rocas agrietadas, Destello y Despejar amplían la vista, Surf quita el freno del agua;
+  los de tipo Fuego queman matorrales.
+- Evoluciones con varias ramas (Eevee…): eliges en la ventana del juego (10 s; si no, al azar).
+- Pisos 25, 50, 75 y 100: arena del guardián legendario de la ruta (se cierra al entrar). Al vencerlo, probabilidad
+  de que se quede del juego: 35 % + 20 % con Baya Frambu + 10 % por cada vez que se te escapó.
+- Cuerda Huida en la antesala del guardián, tras vencerlo y al empezar cada tramo de 5 pisos.
 - Refugio: construir, mover, mejorar y derribar edificios; trabajos de tus Pokémon y recogida de lo producido
   (costes, mejoras, capacidades y ritmos sacados del propio juego); caseta ampliable.
 - Llegadas: los rescatados esperan en la entrada para quedarse o irse (recompensa por liberar igual que el original).
@@ -39,8 +46,9 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 
 ## Pendiente
 
- adornos, ampliar terreno, enemigos a distancia, estados alterados, campamentos, logros,
-diarias y el tutorial guiado completo. Los amigos, clanes y clasificaciones en línea no existen sin internet.
+Pisos con niebla/oscuridad y demás peligros de cada bioma, aprender movimientos nuevos al subir de nivel,
+Malasada, Incienso y Trozos de Estrella, campamentos y hogueras, diarias, tutorial guiado completo, Pokédex completa,
+disfraces, ampliar terreno y la quema de árboles. Los amigos, clanes y clasificaciones en línea no existen sin internet.
 
 ## Estructura
 
