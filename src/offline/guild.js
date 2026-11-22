@@ -66,6 +66,12 @@ function collectOne(g, b, now = Date.now()) {
   return n;
 }
 
+const NATS = ["hardy","lonely","brave","adamant","naughty","bold","docile","relaxed","impish","lax","timid","hasty","serious","jolly","naive","modest","mild","quiet","bashful","rash","calm","gentle","sassy","careful","quirky"];
+const randomGenes = () => ({
+  nature: NATS[Math.floor(Math.random() * NATS.length)],
+  ivs: Object.fromEntries(["hp", "atk", "def", "spa", "spd", "spe"].map((k) => [k, Math.floor(Math.random() * 32)])),
+});
+
 const best = (g, kind) => g.buildings.filter((b) => b.kind === kind).sort((a, b) => (b.level || 1) - (a.level || 1))[0];
 
 /** Un Pokémon de este teléfono cayó en una expedición: queda cansado un rato (el Centro lo cura). */
@@ -336,7 +342,9 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
   }));
 
   // ---- Guardería de Chansey: huevos ----
-  const nestsOf = (g, b) => M.Sa(g.residents.filter((r) => r.job === b.id), b.level || 1, (a, d) => M.Ji(a, d, 132));
+  const DITTO = "0132";
+  const pad = (d) => String(d).padStart(4, "0");
+  const nestsOf = (g, b) => M.Sa(g.residents.filter((r) => r.job === b.id), b.level || 1, (a, d) => M.Ji(pad(a), pad(d), DITTO));
   function settleNests(g, b, now = Date.now()) {
     const nests = nestsOf(g, b);
     b.nests ||= [];
@@ -367,15 +375,11 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
       const inherit = M.Lt.inherit[Math.min(M.Lt.inherit.length, lvl) - 1];
       const hatched = [];
       for (let k = 0; k < n; k++) {
-        const mom = nest.a.dex === 132 || String(nest.a.dex) === "0132" ? nest.b : nest.a;
-        const ivs = {};
-        const keys = ["hp", "atk", "def", "spa", "spd", "spe"].sort(() => Math.random() - 0.5);
-        keys.forEach((key, i) => {
-          const from = Math.random() < 0.5 ? nest.a : nest.b;
-          ivs[key] = i < inherit ? from.ivs?.[key] ?? 15 : Math.floor(Math.random() * 32);
-        });
-        const nature = lvl >= 2 ? (Math.random() < 0.5 ? nest.a : nest.b).nature : undefined;
-        const kid = newResident(baby(mom.dex), { bred: true, ivs, ...(nature ? { nature } : {}), shiny: Math.random() < 1 / 512 });
+        // Cría con la función del propio juego: especie, IV heredados y naturaleza
+        const a = { ...nest.a, dex: pad(nest.a.dex) };
+        const d = { ...nest.b, dex: pad(nest.b.dex) };
+        const born = M.Vi(a, d, inherit, lvl >= 2, DITTO);
+        const kid = newResident(born.dex, { bred: true, ivs: born.ivs, nature: born.nature, shiny: Math.random() < 1 / 512 });
         g.arrivals.push(kid);
         hatched.push(kid);
         const st = ((c.user.meta ||= {}).stats ||= {});
@@ -425,6 +429,101 @@ export function registerGuildRoutes(route, { ok, guildOf, newResident }) {
     if (g.unlocked.includes(id)) throw err("Ya lo tienes");
     pay(g, shelf.cost);
     g.unlocked.push(id);
+  }));
+
+  // ---- Poké Balls (boletos) ----
+  route("POST", "/guild/hatch", async (c) => {
+    if (!M) M = await loadShared();
+    const g = guildOf(c.user);
+    const count = Math.max(1, Math.min(10, Number(c.body?.count) || 1));
+    const cost = { tickets: (M.dn?.tickets ?? 1) * count };
+    if ((g.tickets || 0) < cost.tickets) return { status: 400, body: { message: "Te faltan Poké Balls" } };
+    pay(g, cost);
+    // Mismo reparto que enseña el juego: cada especie no legendaria pesa lo de su rareza
+    const pool = Object.keys(M.Kr).filter((k) => M.Os(k) !== "legendary");
+    const w = pool.map((k) => M.wr[M.Os(k)]?.weight ?? 0);
+    const total = w.reduce((a, b) => a + b, 0);
+    const rank = M.Er;
+    const roll = (minRank = 0) => {
+      for (let tries = 0; tries < 200; tries++) {
+        let x = Math.random() * total;
+        let i = 0;
+        while (x > w[i]) x -= w[i++];
+        const dex = pool[Math.min(i, pool.length - 1)];
+        if (rank[M.Os(dex)] >= minRank) return dex;
+      }
+      return pool[0];
+    };
+    const meta = ((c.user.meta ||= {}).dex ||= { owned: [], seen: [] });
+    const owned = new Set([...g.residents.map((r) => pad(r.dex)), ...g.arrivals.map((r) => pad(r.dex))]);
+    const hatched = [];
+    const fresh = [];
+    let gotRare = false;
+    for (let i = 0; i < count; i++) {
+      g.eggPity = (g.eggPity || 0) + 1;
+      const last = i === count - 1;
+      // Seguro (como dice el juego): "Muy raro o mejor" en 30 como mucho; y en una tirada de 10, al menos un raro
+      const minRank = g.eggPity >= 30 ? rank.epic : count >= 10 && last && !gotRare ? rank.rare : 0;
+      const dex = roll(minRank);
+      if (rank[M.Os(dex)] >= rank.rare) gotRare = true;
+      if (rank[M.Os(dex)] >= rank.epic) g.eggPity = 0;
+      const isNew = !owned.has(dex);
+      owned.add(dex);
+      const kid = newResident(dex, { ...M.Jt ? {} : {}, shiny: Math.random() < 1 / 512 });
+      const r = { ...kid, ...randomGenes() };
+      g.arrivals.push(r);
+      hatched.push(r);
+      fresh.push(isNew);
+      if (!isNew) gain(g, { heartScales: M.Gt?.[M.Os(dex)] || 0 });
+      if (!meta.seen.includes(dex)) meta.seen.push(dex);
+    }
+    const st = ((c.user.meta ||= {}).stats ||= {});
+    st.hatched = (st.hatched || 0) + count;
+    save();
+    return ok({ guild: g, hatched, fresh });
+  });
+
+  // ---- Taller de Smeargle: MO ----
+  route("POST", "/guild/residents/:id/hm", G((g, c) => {
+    const r = findR(g, c.params.id);
+    const id = c.body?.hm;
+    const hm = M.fn[id];
+    if (!hm) throw err("Smeargle no conoce esa MO");
+    const tutor = best(g, "tutor");
+    if (!tutor) throw err("Primero construye el Taller de Smeargle");
+    if ((tutor.level || 1) < hm.level) throw err("Mejora el Taller para enseñarla");
+    if (r.hm === id) throw err("Ya la sabe");
+    pay(g, hm.cost);
+    r.hm = id;
+  }));
+
+  // ---- Herbolario de Bellossom: mentas y hojas ----
+  route("POST", "/guild/residents/:id/mint", G((g, c) => {
+    const r = findR(g, c.params.id);
+    const mint = c.body?.mint;
+    if (!best(g, "herbolario")) throw err("Primero construye el Herbolario");
+    g.leaves ||= {};
+    if (r.mint && (mint === r.nature || !mint)) {
+      r.mint = null;
+      return;
+    }
+    const cost = M.Ko(mint);
+    for (const [k, v] of Object.entries(cost)) if ((g.leaves[k] || 0) < v) throw err("Te faltan hojas");
+    for (const [k, v] of Object.entries(cost)) g.leaves[k] -= v;
+    r.mint = mint;
+    const st = ((c.user.meta ||= {}).stats ||= {});
+    st.minted = (st.minted || 0) + 1;
+  }));
+  route("POST", "/guild/leaves/trade", G((g, c) => {
+    const herb = best(g, "herbolario");
+    const rate = [0, 3, 2, 1][Math.min(3, (herb?.level || 1) - 1)];
+    if (!rate) throw err("Mejora el Herbolario para cambiar hojas");
+    const { from, to } = c.body || {};
+    const n = Math.max(1, Number(c.body?.n) || 1);
+    g.leaves ||= {};
+    if ((g.leaves[from] || 0) < rate * n) throw err("Te faltan hojas");
+    g.leaves[from] -= rate * n;
+    g.leaves[to] = (g.leaves[to] || 0) + n;
   }));
 
   // ---- Varios que solo guardan una elección ----

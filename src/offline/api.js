@@ -63,6 +63,7 @@ export function newGuild() {
     flute: null,
     catch: null,
     unlocked: [],
+    leaves: {},
   };
   for (const k of RES) g[k] = 0;
   g.poke = 50;
@@ -124,6 +125,8 @@ export function grantRun(u, r) {
   for (const dex of r.rescued || [])
     g.arrivals.push(newResident(dex, { originFloor: r.floor || 1, nature: NATURES[Math.floor(Math.random() * 25)], ivs: { hp: iv(), atk: iv(), def: iv(), spa: iv(), spd: iv(), spe: iv() } }));
   for (const [k, v] of Object.entries(r.res || {})) g[k] = (g[k] || 0) + (v || 0);
+  g.leaves ||= {};
+  for (const [k, v] of Object.entries(r.leaves || {})) g.leaves[k] = (g.leaves[k] || 0) + (v || 0);
   const res = g.residents.find((x) => x.id === r.residentId) || g.residents.find((x) => x.partner);
   if (res && r.level) res.level = Math.max(res.level || 1, r.level);
   // Lo que evolucionó en la mazmorra se queda evolucionado
@@ -162,7 +165,7 @@ export function lanUserOf(token, residentId) {
   if (!u) return null;
   const g = guildOf(u);
   const res = g.residents.find((r) => r.id === residentId) || g.residents.find((r) => r.partner);
-  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1 };
+  return { id: u.id, displayName: u.displayName, dex: res?.dex || u.starter || "0025", shiny: !!res?.shiny, level: res?.level || 1, hm: res?.hm || null };
 }
 
 const NATURES = ["hardy","lonely","brave","adamant","naughty","bold","docile","relaxed","impish","lax","timid","hasty","serious","jolly","naive","modest","mild","quiet","bashful","rash","calm","gentle","sassy","careful","quirky"];

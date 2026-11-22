@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.5)
+## Qué funciona (0.6)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -31,13 +31,15 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - Llegadas: los rescatados esperan en la entrada para quedarse o irse (recompensa por liberar igual que el original).
 - Café de Spinda (platos que duran la expedición), Dojo (entrenamiento permanente con Escamas Corazón),
   Centro Pokémon (curar el cansancio de los que caen) y Guardería (parejas compatibles, huevos, cestas y adelantar).
+- Poké Balls con boletos (probabilidades, seguro y escamas por repetidos del juego), Taller de Smeargle (MO)
+  y Herbolario (mentas con hojas que se recogen en las mazmorras y cambio de hojas).
 - Tienda de Kecleon: Semilla Revivir, Elixir, Pergamino, Baya Frambu, Incienso y Cuerda Huida, según el nivel de la tienda.
 - Al volver (cuerda o caer): monedas, recursos y Pokémon rescatados se suman a tu refugio (si caes, solo una parte).
 - Salas por wifi: el que abre grupo hace de anfitrión y los demás lo ven en **Buscar grupo** o entran con su código.
 
 ## Pendiente
 
-Taller y Herbolario (se construyen pero aún no hacen su función), Poké Balls, adornos, ampliar terreno, enemigos a distancia, estados alterados, campamentos, logros,
+ adornos, ampliar terreno, enemigos a distancia, estados alterados, campamentos, logros,
 diarias y el tutorial guiado completo. Los amigos, clanes y clasificaciones en línea no existen sin internet.
 
 ## Estructura

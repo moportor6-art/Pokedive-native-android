@@ -202,6 +202,8 @@ export class ExpeditionRoom extends Room {
     p.specials = moves.join(",");
     p.specialLv = moves.map(() => "0").join(",");
     pm.resident = res?.id;
+    pm.hm = res?.hm || lu?.hm || null;
+    s.hms = [...new Set([...this.meta.values()].map((x) => x.hm).filter(Boolean))].join(",");
     pm.level = Math.max(1, Number(res?.level) || 1);
     pm.training = Number(res?.training) || 0;
     p.evolved = Math.min(2, Number(res?.evolved) || 0);
@@ -826,6 +828,11 @@ export class ExpeditionRoom extends Room {
       const q = spot();
       this.spawnPickup("candy", q.x, q.y);
     }
+    // Hojas de menta (para el Herbolario)
+    if (Math.random() < (chest ? 0.35 : 0.04 * big)) {
+      const q = spot();
+      this.spawnPickup("leaf-" + pick(["atk", "def", "spa", "spd", "spe"]), q.x, q.y);
+    }
   }
 
   upgradePool() {
@@ -872,6 +879,11 @@ export class ExpeditionRoom extends Room {
       this.applyStats(p, pm);
       const nm = this.M.vi?.[k];
       if (nm) this.fx.push({ t: "banner", to: id, text: { es: `¡${nm.es}! ${this.M.gi[k].desc.es}`, en: `${nm.en}! ${this.M.gi[k].desc.en}` } });
+    } else if (pk.kind.startsWith("leaf-")) {
+      const k = pk.kind.slice(5);
+      pm.leaves ||= {};
+      pm.leaves[k] = (pm.leaves[k] || 0) + 1;
+      p.leaves = Object.entries(pm.leaves).map(([a, n]) => `${a}:${n}`).join(",");
     } else if (pk.kind === "ticket") {
       s.tickets = Math.min(65535, s.tickets + 1);
     } else if (pk.kind === "res-heartScales") {
@@ -979,7 +991,8 @@ export class ExpeditionRoom extends Room {
     const lost = extracted ? [] : [...this.carried];
     for (const [id, p] of s.players) {
       const pm = this.meta.get(id);
-      const run = { coins, res, rescued, floor: s.floor, route: s.route, level: p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0 };
+      const leaves = Object.fromEntries(Object.entries(pm?.leaves || {}).map(([k, v]) => [k, Math.round(v * keep)]));
+      const run = { leaves, coins, res, rescued, floor: s.floor, route: s.route, level: p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0, extracted: !!extracted, solo: s.players.size === 1, coop: s.players.size > 1, alphas: s.alphas, bosses: this.bossesBeaten || 0, legends: this.legendsBeaten || 0 };
       if (pm?.user) grantRun(pm.user, { ...run, residentId: pm.resident });
       // Los jugadores de otros teléfonos guardan su botín al leer este mensaje (ver net.js).
       this.fx.push({ t: "end", to: id, extracted: !!extracted, lost, camps: [], stats: [], ...run, loot: res });
