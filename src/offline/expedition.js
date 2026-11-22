@@ -248,6 +248,7 @@ export class ExpeditionRoom extends Room {
       biome: s.route,
       players: s.players.size,
       phase: s.phase,
+      deepest: s.floor,
     });
   }
 

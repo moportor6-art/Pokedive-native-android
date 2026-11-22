@@ -281,7 +281,7 @@ class LanManager implements RelayServer.Sink {
         }
     }
 
-    void text(String id, String text) {
+    void sendText(String id, String text) {
         Conn c = conns.get(id);
         if (c != null && c.isOpen()) {
             try { c.send(text); } catch (Exception ignored) { }

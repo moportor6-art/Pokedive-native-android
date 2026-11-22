@@ -253,7 +253,8 @@ function lanGroups() {
       id: r.roomId,
       roomId: r.roomId,
       mode: "open",
-      host: { displayName: r.name || "Anfitrión" },
+      groupId: r.roomId,
+      host: { displayName: r.name || "Anfitrión", userId: "lan-" + r.roomId, avatar: null, frame: null, title: null, deepest: r.deepest || 1 },
       members: (r.dex || []).map((dex) => ({ dex })),
       players: r.players || 1,
       camp: 1,
@@ -270,6 +271,11 @@ route("GET", "/groups/code/:code", (c) => {
   return r ? ok({ roomId: r.roomId }) : fail(404, "No hay ningún grupo con ese código en tu wifi");
 });
 route("GET", "/rankings", () => ok({ entries: [], me: null }));
+route("GET", "/clans/chips", () => ok({}));
+route("GET", "/users/:id/profile", (c) => {
+  const u = load().users[c.params.id];
+  return ok({ id: c.params.id, displayName: u?.displayName || "Entrenador", avatar: u?.avatar ?? null, frame: u?.frame ?? null, deepest: u?.guild?.deepest || 0, clan: null, friend: false, achievements: [] });
+});
 route("POST", "/expedition/saved/abandon", () => noContent());
 
 export async function handleApi(method, path, query, body, headers) {

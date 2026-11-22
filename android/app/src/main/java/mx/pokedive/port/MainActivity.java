@@ -175,7 +175,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String lanRooms() { return lan.roomsJson(); }
         @JavascriptInterface public String lanConnect(String url) { return lan.connect(url); }
         @JavascriptInterface public void lanSend(String id, String b64) { lan.send(id, b64); }
-        @JavascriptInterface public void lanText(String id, String text) { lan.text(id, text); }
+        @JavascriptInterface public void lanText(String id, String text) { lan.sendText(id, text); }
         @JavascriptInterface public void lanClose(String id) { lan.close(id); }
         @JavascriptInterface public String lanInfo() { return lan.infoJson(); }
     }
