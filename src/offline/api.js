@@ -83,6 +83,8 @@ const RESIDENT_DEFAULTS = () => ({
   costume: null,
   hm: null,
   friends: {},
+  evolved: 0,
+  awaken: 0,
 });
 
 /** Completa campos que el cliente espera (y migra partidas guardadas con versiones anteriores del port). */
@@ -113,8 +115,16 @@ export function grantRun(u, r) {
   g.poke = (g.poke || 0) + (r.coins || 0);
   g.deepest = Math.max(g.deepest || 0, r.floor || 0);
   for (const dex of r.rescued || []) g.residents.push(newResident(dex));
+  for (const [k, v] of Object.entries(r.res || {})) g[k] = (g[k] || 0) + (v || 0);
   const res = g.residents.find((x) => x.id === r.residentId) || g.residents.find((x) => x.partner);
   if (res && r.level) res.level = Math.max(res.level || 1, r.level);
+  // Lo que evolucionó en la mazmorra se queda evolucionado
+  if (res && r.dex && r.evolved > (res.evolved || 0)) {
+    res.dex = r.dex;
+    res.evolved = r.evolved;
+    res.awaken = r.awaken || 0;
+    if (u.starter && res.partner) u.starter = r.dex;
+  }
   if (r.route) {
     const rt = ((u.routes ||= {})[r.route] ||= { deepest: 0, camps: [] });
     rt.deepest = Math.max(rt.deepest, r.floor || 0);

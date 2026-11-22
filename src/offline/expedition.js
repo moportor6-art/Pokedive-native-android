@@ -4,7 +4,7 @@
 // juego (módulo compartido townArt): así la predicción del cliente y el "servidor" coinciden y no hay tirones.
 // El resto (enemigos, daño, experiencia, rescates, escaleras, botín) está escrito desde cero para el port.
 import { Room } from "@colyseus/core/Room";
-import { ExpeditionState, Player, Enemy } from "./schema.js";
+import { ExpeditionState, Player, Enemy, Pickup } from "./schema.js";
 import { guildOf, grantRun, userByToken } from "./api.js";
 import { announce } from "./lan.js";
 
@@ -59,6 +59,9 @@ function initStrings(obj) {
   return obj;
 }
 
+const pad4 = (n) => String(n).padStart(4, "0");
+const RES_KINDS = ["berries", "materials", "crystals"];
+
 const xpNeed = (lv) => Math.round(12 + lv * 7 + lv * lv * 0.6);
 
 export class ExpeditionRoom extends Room {
@@ -88,6 +91,17 @@ export class ExpeditionRoom extends Room {
     this.runStart = 0;
     this.pendingHits = [];
     this.carried = [];
+    this.pickSeq = 0;
+    this.pickVal = new Map(); // id de objeto → valor (monedas, etc.)
+    this.bossId = null;
+    this.bossWarned = 0;
+    // Evoluciones: tabla hijo → padre del juego, invertida
+    this.kids = new Map();
+    for (const [c, par] of Object.entries(M.Jt || {})) {
+      const k = Number(par);
+      if (!this.kids.has(k)) this.kids.set(k, []);
+      this.kids.get(k).push(pad4(c));
+    }
 
     const on = (type, fn) =>
       this.onMessage(type, (client, msg) => {
@@ -125,7 +139,8 @@ export class ExpeditionRoom extends Room {
       const pm = this.meta.get(c.sessionId);
       if (pm) pm.floorReady = s.floor;
     });
-    on("rope", (c) => this.endRun(true));
+    on("rope", () => this.endRun(true));
+    on("rope-return", () => this.endRun(true));
     on("spong", () => {});
     on("tab", () => {});
     on("saveState", () => {});
@@ -171,6 +186,8 @@ export class ExpeditionRoom extends Room {
     p.specialLv = moves.map(() => "0").join(",");
     pm.resident = res?.id;
     pm.level = Math.max(1, Number(res?.level) || 1);
+    p.evolved = Math.min(2, Number(res?.evolved) || 0);
+    pm.awaken = Math.min(2, Number(res?.awaken) || 0);
     this.applyStats(p, pm);
     this.updateRoster();
   }
@@ -182,7 +199,7 @@ export class ExpeditionRoom extends Room {
     pm.atk = Math.max(st.atk, st.spa);
     pm.def = (st.def + st.spd) / 2;
     p.level = pm.level;
-    const maxHp = Math.round(60 + st.hp * 0.6 + p.level * 9);
+    const maxHp = Math.round((60 + st.hp * 0.6 + p.level * 9) * (1 + 0.12 * (pm.awaken || 0)));
     const ratio = p.maxHp ? p.hp / p.maxHp : 1;
     p.maxHp = maxHp;
     p.hp = Math.max(1, Math.round(maxHp * ratio));
@@ -281,6 +298,10 @@ export class ExpeditionRoom extends Room {
     s.enemies.clear();
     s.projectiles.clear();
     s.pickups.clear();
+    this.pickVal.clear();
+    this.bossId = null;
+    s.ropeX = -1;
+    s.ropeY = -1;
     s.mods.clear();
     this.enemyAI.clear();
     this.pendingHits = [];
@@ -303,10 +324,28 @@ export class ExpeditionRoom extends Room {
     const count = Math.min(L.enemySpawns.length, 6 + Math.floor(s.floor * 0.8));
     const spawns = [...L.enemySpawns].sort(() => Math.random() - 0.5).slice(0, count);
     for (const sp of spawns) this.spawnEnemy(pick(pool.foes), sp.x, sp.y);
-    if (s.floor % 5 === 0 && L.enemySpawns.length) {
+    // Alfa de vez en cuando
+    if (s.floor % 5 !== 0 && s.floor > 2 && Math.random() < 0.35 && spawns.length) {
+      const sp = pick(spawns);
+      this.spawnEnemy(pick(pool.alpha), sp.x + 12, sp.y, { alpha: true });
+    }
+    // Jefe cada 5 pisos (cada 10, un legendario guardián de la ruta). Las escaleras no funcionan hasta vencerlo.
+    if (s.floor % 5 === 0) {
       const o = L.spawns[0];
-      const far = [...L.enemySpawns].sort((a, b) => Math.hypot(b.x - o.x, b.y - o.y) - Math.hypot(a.x - o.x, a.y - o.y))[0];
-      this.spawnEnemy(pick(pool.alpha), far.x, far.y, { alpha: true });
+      const cands = [...L.enemySpawns, L.stairs].filter(Boolean);
+      const far = cands.sort((a, b) => Math.hypot(b.x - o.x, b.y - o.y) - Math.hypot(a.x - o.x, a.y - o.y))[0] || L.stairs;
+      const guardians = this.M.Cn?.[s.route] || [];
+      const legend = s.floor % 10 === 0 && guardians.length;
+      const species = legend ? pick(guardians) : pick(pool.alpha);
+      this.bossId = this.spawnEnemy(species, far.x, far.y, { boss: true, legend: !!legend });
+      this.fx.push({ t: "banner", text: { es: legend ? "¡Un guardián legendario custodia este piso!" : "¡Un jefe custodia las escaleras!", en: legend ? "A legendary guardian guards this floor!" : "A boss guards the stairs!" } });
+    }
+    // Cofres del mapa
+    for (const c of L.chests || []) this.spawnPickup("chest", c.x, c.y);
+    // Cuerda Huida: cada 5 pisos aparece junto a la salida para volver al pueblo con todo
+    if (s.floor > 1 && (s.floor - 1) % 5 === 0) {
+      s.ropeX = L.spawns[0].x + 24;
+      s.ropeY = L.spawns[0].y;
     }
     this.updateRoster();
     for (const pm of this.meta.values()) pm.floorReady = 0;
@@ -351,16 +390,19 @@ export class ExpeditionRoom extends Room {
     e.y = y;
     e.dir = Math.floor(Math.random() * 8);
     e.anim = "Idle";
-    const hp = Math.round((18 + s.floor * 9) * (0.6 + st.hp / 110) * (extra.alpha ? 4 : 1));
+    const mult = extra.boss ? (extra.legend ? 16 : 10) : extra.alpha ? 4 : 1;
+    const hp = Math.round((18 + s.floor * 9) * (0.6 + st.hp / 110) * mult);
     e.maxHp = hp;
     e.hp = hp;
     e.alpha = !!extra.alpha;
+    e.boss = !!extra.boss;
     s.enemies.set(id, e);
     this.enemyAI.set(id, {
       types: sp?.types || ["normal"],
       atk: Math.max(st.atk, st.spa),
       def: (st.def + st.spd) / 2,
-      speed: clamp(34 + st.spe * 0.18, 34, 64) * (extra.alpha ? 0.9 : 1),
+      speed: clamp(34 + st.spe * 0.18, 34, 64) * (extra.alpha || extra.boss ? 0.9 : 1),
+      slamT: extra.boss ? 3 : 0,
       cd: rnd(0.5, 1.5),
       home: { x, y },
       wander: { x, y, t: 0 },
@@ -414,7 +456,7 @@ export class ExpeditionRoom extends Room {
     const dx = clamp(Number(m.x) || 0, -1, 1);
     const dy = clamp(Number(m.y) || 0, -1, 1);
     const paused = !!s.pausedBy;
-    if (!p.downed && !paused && s.phase === "exploring") {
+    if (!p.downed && !paused && s.phase === "exploring" && !p.evoTo) {
       this.stepMover(pm, p, dx, dy, this.playerEnv(p));
       p.moving = Math.hypot(p.vx, p.vy) > 10 || p.dodgeT > 0;
       if (dx || dy) p.dir = dirOf(dx, dy);
@@ -562,7 +604,7 @@ export class ExpeditionRoom extends Room {
     const eff = effectiveness(mv.type, ai.types);
     const stab = pm.types.includes(mv.type) ? 1.2 : 1;
     const crit = Math.random() < 0.06;
-    let dmg = (mv.power || 6) * (1 + p.level * 0.12) * Math.sqrt(pm.atk / ai.def) * eff * stab * mult * rnd(0.9, 1.1) * (crit ? 1.6 : 1);
+    let dmg = (mv.power || 6) * (1 + p.level * 0.12) * (1 + 0.14 * (pm.awaken || 0)) * Math.sqrt(pm.atk / ai.def) * eff * stab * mult * rnd(0.9, 1.1) * (crit ? 1.6 : 1);
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
     ai.aggro = Math.max(ai.aggro || 0, 6);
@@ -591,8 +633,15 @@ export class ExpeditionRoom extends Room {
     if (e.alpha) s.alphas++;
     const alive = [...s.enemies.values()].filter((x) => !x.dead).length;
     this.fx.push({ t: "kill", id: eid, by: sid, x: e.x, y: e.y, alpha: e.alpha || undefined, last: alive === 0 || undefined });
-    s.coins += Math.round(rnd(1, 3) + s.floor * 0.5) * (e.alpha ? 8 : 1);
-    const xp = Math.round((6 + s.floor * 2) * (e.alpha ? 5 : 1));
+    const big = e.boss ? 10 : e.alpha ? 4 : 1;
+    this.dropLoot(e.x, e.y, big);
+    if (eid === this.bossId) {
+      this.bossId = null;
+      s.ropeX = e.x;
+      s.ropeY = e.y + 20;
+      this.fx.push({ t: "banner", text: { es: "¡Jefe derrotado! Puedes bajar o volver con la cuerda", en: "Boss defeated! Go down or use the rope" } });
+    }
+    const xp = Math.round((6 + s.floor * 2) * (e.boss ? 12 : e.alpha ? 5 : 1));
     for (const [id, p] of s.players) if (!p.downed) this.giveXp(id, p, xp);
   }
 
@@ -608,6 +657,110 @@ export class ExpeditionRoom extends Room {
       this.fx.push({ t: "banner", to: id, text: { es: `¡Nivel ${p.level}!`, en: `Level ${p.level}!` } });
     }
     p.xp = Math.min(65535, total);
+    this.checkEvolve(p, pm);
+  }
+
+  /** Evoluciona (o "despierta", si ya no tiene más evoluciones) al llegar al nivel que marca el juego. */
+  checkEvolve(p, pm) {
+    if (p.evoTo || p.downed) return;
+    const lvl = this.M.is(p.species, p.evolved);
+    if (lvl == null || p.level < lvl) return;
+    const kids = (this.kids.get(Number(p.species)) || []).filter((k) => this.M.Kr[k]);
+    p.evoTo = kids.length ? pick(kids) : "+";
+    p.evoT = 2;
+    pm.invuln = Math.max(pm.invuln || 0, 2.2);
+  }
+
+  finishEvolve(id, p, pm) {
+    const from = this.M.Kr[p.species]?.names;
+    if (p.evoTo === "+") {
+      pm.awaken = Math.min(2, (pm.awaken || 0) + 1);
+      p.evolved = Math.min(2, p.evolved + 1);
+      this.applyStats(p, pm);
+      this.fx.push({ t: "banner", to: id, text: { es: `¡${from?.es || "Tu Pokémon"} ha despertado su poder!`, en: `${from?.en || "Your Pokémon"} awakened!` } });
+    } else {
+      p.species = p.evoTo;
+      p.evolved = Math.min(2, p.evolved + 1);
+      this.applyStats(p, pm);
+      p.hp = p.maxHp;
+      const to = this.M.Kr[p.species]?.names;
+      this.fx.push({ t: "banner", to: id, text: { es: `¡${from?.es} evolucionó a ${to?.es}!`, en: `${from?.en} evolved into ${to?.en}!` } });
+      this.updateRoster();
+    }
+    p.evoTo = "";
+    p.evoT = 0;
+    pm.pred = null;
+  }
+
+  // ---------- Botín ----------
+  spawnPickup(kind, x, y, val = 0) {
+    const pk = initStrings(new Pickup());
+    pk.kind = kind;
+    pk.x = x;
+    pk.y = y;
+    const id = "k" + ++this.pickSeq;
+    this.state.pickups.set(id, pk);
+    if (val) this.pickVal.set(id, val);
+    return id;
+  }
+
+  /** Lo que suelta un enemigo (o un cofre): monedas, bayas, materiales y, rara vez, caramelos. */
+  dropLoot(x, y, big = 1, chest = false) {
+    const s = this.state;
+    const spot = () => this.freeSpot(x, y, chest ? 26 : 14);
+    const n = chest ? 2 + Math.floor(Math.random() * 3) : big > 1 ? 2 + Math.floor(big / 3) : 1;
+    for (let i = 0; i < n; i++) {
+      const q = spot();
+      this.spawnPickup("coin", q.x, q.y, Math.round((rnd(1, 3) + s.floor * 0.5) * (chest ? 2 : 1) * Math.max(1, big / 2)));
+    }
+    if (Math.random() < (chest ? 0.7 : 0.18 * big)) {
+      const q = spot();
+      this.spawnPickup("berry", q.x, q.y);
+    }
+    if (Math.random() < (chest ? 0.9 : 0.12 * big)) {
+      const q = spot();
+      this.spawnPickup("res-" + pick(RES_KINDS), q.x, q.y, chest ? 3 : 1 + Math.floor(big / 3));
+    }
+    if (Math.random() < (chest ? 0.25 : 0.02 * big)) {
+      const q = spot();
+      this.spawnPickup("candy", q.x, q.y);
+    }
+  }
+
+  freeSpot(x, y, r) {
+    const L = this.layout;
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = r * (0.4 + Math.random() * 0.6);
+      const px = x + Math.cos(a) * d;
+      const py = y + Math.sin(a) * d;
+      const tx = Math.floor(px / 16);
+      const ty = Math.floor(py / 16);
+      if (L.tiles?.[ty]?.[tx] !== undefined && L.tiles[ty][tx] !== 1) return { x: px, y: py };
+    }
+    return { x, y };
+  }
+
+  collect(id, p, pm, kid, pk) {
+    const s = this.state;
+    const val = this.pickVal.get(kid) || 1;
+    s.pickups.delete(kid);
+    this.pickVal.delete(kid);
+    this.fx.push({ t: "pick", kind: pk.kind, x: pk.x, y: pk.y, id });
+    if (pk.kind === "chest") {
+      this.dropLoot(pk.x, pk.y, 1, true);
+    } else if (pk.kind === "coin") {
+      s.coins += val;
+    } else if (pk.kind === "berry") {
+      if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3);
+      else s.berries = Math.min(65535, s.berries + 1);
+    } else if (pk.kind.startsWith("res-")) {
+      const k = pk.kind.slice(4);
+      if (k in s) s[k] = Math.min(65535, s[k] + val);
+    } else if (pk.kind === "candy") {
+      s.candies = Math.min(65535, s.candies + 1);
+      this.giveXp(id, p, p.xpNext);
+    }
   }
 
   hurtPlayer(id, p, dmg, ty, from) {
@@ -658,14 +811,17 @@ export class ExpeditionRoom extends Room {
     const s = this.state;
     if (s.phase === "ended" || s.phase === "lobby") return;
     s.phase = "ended";
-    const coins = Math.round(s.coins * (extracted ? 1 : 0.25));
+    const keep = extracted ? 1 : 0.25;
+    const coins = Math.round(s.coins * keep);
+    const res = { berries: Math.round(s.berries * keep), materials: Math.round(s.materials * keep), crystals: Math.round(s.crystals * keep), candies: Math.round(s.candies * keep) };
     const rescued = extracted ? [...this.carried, ...(s.rescued ? [s.rescueSpecies] : [])] : [];
     const lost = extracted ? [] : [...this.carried];
     for (const [id, p] of s.players) {
       const pm = this.meta.get(id);
-      if (pm?.user) grantRun(pm.user, { coins, rescued, floor: s.floor, route: s.route, level: p.level, residentId: pm.resident });
+      const run = { coins, res, rescued, floor: s.floor, route: s.route, level: p.level, dex: p.species, evolved: p.evolved, awaken: pm?.awaken || 0 };
+      if (pm?.user) grantRun(pm.user, { ...run, residentId: pm.resident });
       // Los jugadores de otros teléfonos guardan su botín al leer este mensaje (ver net.js).
-      this.fx.push({ t: "end", to: id, extracted: !!extracted, floor: s.floor, coins, rescued, lost, camps: [], stats: [], route: s.route, level: p.level });
+      this.fx.push({ t: "end", to: id, extracted: !!extracted, lost, camps: [], stats: [], ...run, loot: res });
     }
     this.flushFx();
     this.clock.setTimeout(() => this.disconnect(), 6000);
@@ -700,7 +856,14 @@ export class ExpeditionRoom extends Room {
         p.cdDodge = Math.max(0, p.cdDodge - dt);
         if (pm.invuln > 0) pm.invuln -= dt;
         if (pm.shieldT > 0 && (pm.shieldT -= dt) <= 0) p.shielded = false;
+        if (p.evoTo && (p.evoT -= dt) <= 0) this.finishEvolve(id, p, pm);
         if (s.phase !== "exploring") continue;
+        if (!p.downed) {
+          for (const [kid, pk] of s.pickups) {
+            const r = pk.kind === "chest" ? 20 : 16;
+            if (Math.abs(pk.x - p.x) < r && Math.abs(pk.y - p.y) < r && Math.hypot(pk.x - p.x, pk.y - p.y) < r) this.collect(id, p, pm, kid, pk);
+          }
+        }
         if (!p.downed && p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.004 * dt);
         if (!s.rescued && s.rescueSpecies && !p.downed && Math.hypot(p.x - s.rescueX, p.y - s.rescueY) < RESCUE_R) {
           s.rescued = true;
@@ -709,6 +872,14 @@ export class ExpeditionRoom extends Room {
           this.fx.push({ t: "banner", text: { es: `¡${name.es} se une!`, en: `${name.en} joins you!` }, sub: { es: "Llévalo a las escaleras", en: "Take it to the stairs" } });
         }
         if (!p.downed && Math.hypot(p.x - s.stairsX, p.y - s.stairsY) < STAIRS_R) {
+          const boss = this.bossId && s.enemies.get(this.bossId);
+          if (boss && !boss.dead) {
+            if (Date.now() - this.bossWarned > 4000) {
+              this.bossWarned = Date.now();
+              this.fx.push({ t: "banner", to: id, text: { es: "Vence al jefe para bajar", en: "Defeat the boss to go down" } });
+            }
+            continue;
+          }
           this.goNextFloor();
           break;
         }
@@ -766,7 +937,7 @@ export class ExpeditionRoom extends Room {
           target = [pid, p];
         }
       }
-      const aggroR = (ai.aggro || 0) > 0 ? 260 : e.alpha ? 150 : 120;
+      const aggroR = (ai.aggro || 0) > 0 ? 260 : e.boss ? 170 : e.alpha ? 150 : 120;
       if (ai.aggro > 0) ai.aggro -= dt;
       ai.cd -= dt;
       let dx = 0;
@@ -777,12 +948,33 @@ export class ExpeditionRoom extends Room {
           dx = (p.x - e.x) / td;
           dy = (p.y - e.y) / td;
         }
-        if (td < ENEMY_HIT_R + (e.alpha ? 8 : 0) && ai.cd <= 0) {
+        if (e.boss && td < 150) {
+          ai.slamT -= dt;
+          if (ai.slamT <= 0.7 && !ai.slamAt) {
+            ai.slamAt = { x: p.x, y: p.y };
+            e.anim = "Attack";
+            e.animSeq = (e.animSeq + 1) & 0xffff;
+            this.fx.push({ t: "burst", x: p.x, y: p.y, r: 52, color: "#ff5040", ty: ai.types[0] });
+          }
+          if (ai.slamT <= 0) {
+            const at = ai.slamAt || { x: p.x, y: p.y };
+            ai.slamAt = null;
+            ai.slamT = 3.2;
+            this.fx.push({ t: "slam", x: at.x, y: at.y, r: 52 });
+            for (const [qid, q] of players) {
+              if (Math.hypot(q.x - at.x, q.y - at.y) < 52) {
+                const qm = this.meta.get(qid);
+                this.hurtPlayer(qid, q, (10 + s.floor * 2.4) * Math.sqrt(ai.atk / Math.max(30, qm?.def || 50)), ai.types[0], id);
+              }
+            }
+          }
+        }
+        if (td < ENEMY_HIT_R + (e.alpha || e.boss ? 8 : 0) && ai.cd <= 0) {
           ai.cd = e.alpha ? 1.1 : 1.4;
           e.anim = "Attack";
           e.animSeq = (e.animSeq + 1) & 0xffff;
           const pm = this.meta.get(pid);
-          const dmg = (5 + s.floor * 1.6) * Math.sqrt(ai.atk / Math.max(30, pm?.def || 50)) * (e.alpha ? 1.8 : 1) * rnd(0.85, 1.15);
+          const dmg = (5 + s.floor * 1.6) * Math.sqrt(ai.atk / Math.max(30, pm?.def || 50)) * (e.boss ? 2.2 : e.alpha ? 1.8 : 1) * rnd(0.85, 1.15);
           this.hurtPlayer(pid, p, dmg, ai.types[0], id);
         }
       } else {

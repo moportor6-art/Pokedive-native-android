@@ -92,7 +92,7 @@ export function installNet() {
           const usr = who && userByToken(who.token);
           if (usr && !who.granted) {
             who.granted = true;
-            grantRun(usr, { coins: fx.coins, rescued: fx.rescued, floor: fx.floor, route: fx.route, level: fx.level, residentId: who.resident });
+            grantRun(usr, { coins: fx.coins, res: fx.res, rescued: fx.rescued, floor: fx.floor, route: fx.route, level: fx.level, dex: fx.dex, evolved: fx.evolved, awaken: fx.awaken, residentId: who.resident });
           }
         });
         return new LanSocket(u, lan, onData);

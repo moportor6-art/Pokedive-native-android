@@ -11,19 +11,23 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.1)
+## Qué funciona (0.2)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
 - Expediciones en las 9 rutas: movimiento y esquiva con la física del juego, ataque básico automático,
   dos especiales y definitiva, enemigos del bioma con IA sencilla, daño por tipos, experiencia y niveles,
   un alfa cada 5 pisos, rescate del Pokémon del piso y escaleras.
-- Al volver (Cuerda Huida o caer): monedas y Pokémon rescatados se suman a tu refugio.
+- Evoluciones al nivel que marca el juego (y "despertar" para los que no evolucionan), y se guardan en tu refugio.
+- Botín: monedas, bayas, materiales, cristales y caramelos raros que sueltan los enemigos; cofres en el mapa.
+- Jefe cada 5 pisos (legendario guardián de la ruta cada 10) que bloquea las escaleras y golpea en área.
+- Cuerda Huida tras vencer al jefe y al empezar cada tramo de 5 pisos para volver al pueblo con todo.
+- Al volver (cuerda o caer): monedas, recursos y Pokémon rescatados se suman a tu refugio (si caes, solo una parte).
 - Salas por wifi: el que abre grupo hace de anfitrión y los demás lo ven en **Buscar grupo** o entran con su código.
 
 ## Pendiente
 
-Construcción del refugio y trabajos, tienda, objetos y mochila, evoluciones, jefes/guardianes, campamentos, logros,
+Construcción del refugio y trabajos, tienda, mochila y objetos equipables, enemigos a distancia, estados alterados, campamentos, logros,
 diarias y el tutorial guiado completo. Los amigos, clanes y clasificaciones en línea no existen sin internet.
 
 ## Estructura
