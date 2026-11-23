@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.15)
+## Qué funciona (0.16)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -105,6 +105,10 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
   sin Etapas, empezando en el piso 1; guarda tu mejor piso de la semana y sale en la clasificación local.
 - **Tutorial guiado** completo: el claro del bosque, Lampent guiando y Growlithe perdido, como en el original.
 - **Pokédex completa**: registra todos los que tienes o has tenido y los que has visto en las expediciones.
+
+- **100 % local**: sin crear cuenta, sin Google/Discord/correo/contraseña, sin cerrar sesión ni borrar cuenta, sin
+  reportes al servidor, sin códigos de regalo, sin Wiki ni Discord, sin amigos ni clanes en línea y sin política de
+  privacidad de cuentas. Ningún enlace abre nada fuera del juego (tampoco la app). Los eventos no caducan.
 
 ## Pendiente
 

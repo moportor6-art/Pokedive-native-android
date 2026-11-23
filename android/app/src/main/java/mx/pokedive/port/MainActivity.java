@@ -87,7 +87,7 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
                 if (HOST.equals(u.getHost())) return false;
-                openExternal(u.toString());
+                // Preservación offline: nada lleva fuera del juego (ni webs, ni cuentas, ni redes)
                 return true;
             }
         });

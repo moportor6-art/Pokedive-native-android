@@ -1,10 +1,12 @@
 // Entrada del port: se carga antes que el juego y lo deja jugar sin internet.
 import { installNet } from "./net.js";
 import { installUpdateUi } from "./updui.js";
+import { installCleanUi } from "./cleanui.js";
 
 window.__pdLog = window.__pdLog || [];
 installNet();
 installUpdateUi();
+installCleanUi();
 
 // Para depurar desde la consola (no lo usa el juego).
 import { load, save } from "./store.js";
