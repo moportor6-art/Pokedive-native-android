@@ -1,6 +1,6 @@
 // La API REST del juego (/api/...), respondida en el teléfono.
 import { load, save, rid } from "./store.js";
-import { listLanRooms } from "./lan.js";
+import { listLanRooms, findInternetRoom } from "./lan.js";
 import { registerGuildRoutes } from "./guild.js";
 import { loadShared } from "./shared.js";
 
@@ -522,10 +522,11 @@ function lanGroups() {
 route("GET", "/groups", () => ok({ groups: lanGroups(), mine: null }));
 route("GET", "/groups/requests/mine", () => ok(null));
 route("GET", "/groups/requests", () => ok([]));
-route("GET", "/groups/code/:code", (c) => {
+route("GET", "/groups/code/:code", async (c) => {
   const code = String(c.params.code || "").trim().toUpperCase();
-  const r = listLanRooms().find((x) => String(x.code).toUpperCase() === code);
-  return r ? ok({ roomId: r.roomId }) : fail(404, "No hay ningún grupo con ese código en tu wifi");
+  // Primero en la wifi; si no está, por internet (el anfitrión abre su grupo también allí)
+  const r = listLanRooms().find((x) => String(x.code).toUpperCase() === code) || (await findInternetRoom(code).catch(() => null));
+  return r ? ok({ roomId: r.roomId }) : fail(404, "No hay ningún grupo con ese código (ni en tu wifi ni por internet)");
 });
 // Clasificaciones locales: tú y los jugadores con los que has jugado por wifi en este teléfono.
 function localPlayers() {

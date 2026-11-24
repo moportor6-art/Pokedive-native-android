@@ -1,4 +1,4 @@
-# PokéDive para Android (offline + salas por wifi)
+# PokéDive para Android (offline + salas por wifi y por internet)
 
 Port no oficial de [PokéDive](https://pokedive.com) (fangame de Nicolr3) a una app de Android que funciona **sin internet**.
 
@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.16)
+## Qué funciona (0.17)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -43,6 +43,9 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - Tienda de Kecleon: Semilla Revivir, Elixir, Pergamino, Baya Frambu, Incienso y Cuerda Huida, según el nivel de la tienda.
 - Al volver (cuerda o caer): monedas, recursos y Pokémon rescatados se suman a tu refugio (si caes, solo una parte).
 - Salas por wifi: el que abre grupo hace de anfitrión y los demás lo ven en **Buscar grupo** o entran con su código.
+- **Salas por internet** (0.17): el mismo código de 4 letras del grupo sirve desde cualquier sitio. Si no está en tu
+  wifi, el juego lo busca por internet (PeerJS, como DB Survivors) y la partida va directa entre los teléfonos;
+  el anfitrión sigue siendo el servidor. También desde el PC (Port Launcher).
 
 - **Se actualiza sola** (el actualizador de DB Survivors): al abrirla con internet busca la última versión publicada
   aquí; si solo cambió el juego baja únicamente los archivos cambiados (comprobados uno por uno), y si cambió la parte
