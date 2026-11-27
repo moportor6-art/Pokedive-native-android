@@ -87,6 +87,7 @@ import { hazardMethods } from "./hazards.js";
 import { mansionMethods } from "./mansion.js";
 import { raidMethods } from "./raid.js";
 import { shopMethods } from "./shop.js";
+import { salasMethods } from "./salas.js";
 
 // Guardianes de los pisos 50, 75 y 100 (tabla del juego; no viene exportada en el módulo compartido)
 const LATE_GUARDIANS = {
@@ -534,6 +535,7 @@ export class ExpeditionRoom extends Room {
     if (!s.tutorial) {
       this.sealChests();
       this.setupShop();
+      this.setupSalas();
     }
     this.tickBuffsFloor();
     // Cuerda Huida: cada 5 pisos aparece junto a la salida para volver al pueblo con todo
@@ -1884,4 +1886,4 @@ function distToSegment(pt, a, b) {
   return Math.hypot(pt.x - (a.x + vx * t), pt.y - (a.y + vy * t));
 }
 
-Object.assign(ExpeditionRoom.prototype, hazardMethods, mansionMethods, raidMethods, shopMethods);
+Object.assign(ExpeditionRoom.prototype, hazardMethods, mansionMethods, raidMethods, shopMethods, salasMethods);

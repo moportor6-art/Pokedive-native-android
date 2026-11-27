@@ -11,7 +11,7 @@ hacía en su servidor.
 
 En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima del anterior y conservarás la partida.
 
-## Qué funciona (0.17)
+## Qué funciona (0.18)
 
 - Arranque sin conexión, partida de invitado guardada en el teléfono.
 - Intro, elección de inicial y pueblo/refugio.
@@ -46,6 +46,13 @@ En **Releases** está el último `0.x.apk`. Para actualizar, instálalo encima d
 - **Salas por internet** (0.17): el mismo código de 4 letras del grupo sirve desde cualquier sitio. Si no está en tu
   wifi, el juego lo busca por internet (PeerJS, como DB Survivors) y la partida va directa entre los teléfonos;
   el anfitrión sigue siendo el servidor. También desde el PC (Port Launcher).
+
+- **Salas especiales** (0.18, `src/offline/salas.js` con [worldgen](https://github.com/moportor6-art/worldgen)): en
+  algunos pisos (40 %, desde el 2 y sin contar los del guardián) un rincón sin salida del propio piso se vuelve sala con
+  2 o 3 cofres y hierba alta. Si el grupo puede abrirla, la entrada se tapa: con **matorrales** (los quema un Pokémon
+  de Fuego) o **rocas grandes** (Golpe Roca). Si nadie puede, queda abierta con un **alfa guardián** y sus cofres se
+  abren al vencerlo. Un aviso al empezar el piso dice qué hay. Nunca encierra la escalera, el rescate, la tienda ni
+  los cofres del piso (probado con 441 pisos reales de las 9 rutas).
 
 - **Se actualiza sola** (el actualizador de DB Survivors): al abrirla con internet busca la última versión publicada
   aquí; si solo cambió el juego baja únicamente los archivos cambiados (comprobados uno por uno), y si cambió la parte
